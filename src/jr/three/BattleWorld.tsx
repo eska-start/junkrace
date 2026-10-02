@@ -231,7 +231,11 @@ export function BattleWorld() {
       const spec = specFor(racer);
       const playerId = racer.id === 'player' ? g.online?.playerId : racer.id.startsWith('net-') ? racer.id.slice(4) : null;
       const human = playerId ? orderedHumans.find((p) => p.id === playerId) : undefined;
-      const own = human ? orderedHumans.findIndex((p) => p.id === human.id) : orderedHumans.length + (i - orderedHumans.length);
+      const own = teamMode
+        ? (racer.team ?? (i % 2))
+        : human
+          ? orderedHumans.findIndex((p) => p.id === human.id)
+          : orderedHumans.length + (i - orderedHumans.length);
       const team = teamMode ? racer.team ?? (i % 2) : undefined;
       return {
         own, team,
@@ -246,7 +250,7 @@ export function BattleWorld() {
         previousX: start.x, previousZ: start.z, jumpCd: 0, wasAir: false, spin: 0,
       };
     });
-    const paint = new TerritoryMap(teamMode ? [TEAM_COLORS[0], TEAM_COLORS[1]] : list.map((_, i) => actors[i].color));
+    const paint = new TerritoryMap(teamMode ? [TEAM_COLORS[0], TEAM_COLORS[1]] : colors.slice(0, list.length));
     return {
       teamMode, myTeam, actors, paint, readyEnds: 0, playEnds: 0, finishedAt: 0, submitted: false, shake: 0,
       droplets: Array.from({ length: 150 }, (): Droplet => ({ x: 0, y: -100, z: 0, vx: 0, vy: 0, vz: 0, life: 0, scale: 0, color: '#ffffff' })),
