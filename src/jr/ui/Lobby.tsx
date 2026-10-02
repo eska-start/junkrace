@@ -167,10 +167,10 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
   const chatRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
-    if (!peerRoom) return;
+    if (!peerRoom) return undefined;
     const off = peerRoom.subscribe(() => setVersion((v) => v + 1));
     setVersion((v) => v + 1);
-    return off;
+    return () => { off(); };
   }, [peerRoom]);
 
   const room = peerRoom ? snapshot(peerRoom) : null;
