@@ -202,12 +202,14 @@ export function BattleWorld() {
     // 나머지 참가자는 네트워크 퍼펫으로 움직이며 빈 자리는 AI가 채운다.
     const roomPlayers = g.online?.players ?? [];
     const me = roomPlayers.find((p) => p.id === g.online?.playerId);
-    const orderedHumans = me ? [me, ...roomPlayers.filter((p) => p.id !== me.id)] : [];
+    const orderedHumans = me
+      ? [me, ...roomPlayers.filter((p) => p.id !== me.id)]
+      : [{ id: '__local__', name: 'PLAYER', characterId: g.characterId, color: g.paintColor, team: 0 }];
     const colors = orderedHumans.map((p) => p.color);
     while (colors.length < 4) colors.push(PLAYER_COLORS[colors.length] ?? '#ffc16b');
 
     const humanRacers: Racer[] = orderedHumans.map((p) => {
-      const local = p.id === g.online?.playerId;
+      const local = !g.online || p.id === g.online.playerId;
       return {
         id: local ? 'player' : `net-${p.id}`,
         name: p.name,
@@ -229,7 +231,9 @@ export function BattleWorld() {
     const actors: Actor[] = list.map((racer, i) => {
       const start = STARTS[i];
       const spec = specFor(racer);
-      const playerId = racer.id === 'player' ? g.online?.playerId : racer.id.startsWith('net-') ? racer.id.slice(4) : null;
+      const playerId = racer.id === 'player'
+        ? (g.online?.playerId ?? '__local__')
+        : racer.id.startsWith('net-') ? racer.id.slice(4) : null;
       const human = playerId ? orderedHumans.find((p) => p.id === playerId) : undefined;
       const own = teamMode
         ? (racer.team ?? (i % 2))
