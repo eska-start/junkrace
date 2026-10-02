@@ -1,11 +1,14 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-const databaseUrl = process.env.DATABASE_URL;
+// Vercel Marketplace/Supabase는 POSTGRES_URL을 제공할 수 있고,
+// 기존 환경은 DATABASE_URL을 사용할 수 있다.
+const databaseUrl =
+  process.env.DATABASE_URL ??
+  process.env.POSTGRES_URL ??
+  process.env.POSTGRES_PRISMA_URL ??
+  process.env.POSTGRES_URL_NON_POOLING;
 
-// DATABASE_URL은 빌드 시점이 아니라 실제 DB 요청 시 사용한다.
-// Next.js가 API Route의 모듈을 빌드 중 로드할 수 있으므로
-// 여기서 즉시 throw 하면 Vercel/Next.js 프로덕션 빌드가 실패한다.
 const globalForDb = globalThis as typeof globalThis & {
   __arenaNextJsPostgresqlPool?: Pool;
 };
