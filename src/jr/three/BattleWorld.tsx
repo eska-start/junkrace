@@ -198,19 +198,46 @@ export function BattleWorld() {
     const g = useGame.getState();
     const teamMode = g.gameMode === 'team';
     const myTeam = g.online ? g.online.players.find((p) => p.id === g.online!.playerId)?.team ?? 0 : 0;
-    const colors = [g.paintColor, ...PLAYER_COLORS.filter((c) => c !== g.paintColor)].slice(0, 4);
-    const self: Racer = { id: 'player', name: g.online?.players.find((p) => p.id === g.online!.playerId)?.name ?? 'PLAYER', characterId: g.characterId, jersey: colors[0], build: g.build, items: itemsMap(g.inventory), isPlayer: true, controlIndex: 0, loadout: g.loadout ?? undefined, team: teamMode ? myTeam : undefined };
-    const list = [self, ...g.bots].slice(0, 4);
-    if (teamMode) list.forEach((r, i) => { colors[i] = TEAM_COLORS[r.team ?? (i < 2 ? 0 : 1)]; });
+    // 온라인 방 참가자를 실제 액터로 구성한다. 자기 자신은 로컬 조작,
+    // 나머지 참가자는 네트워크 퍼펫으로 움직이며 빈 자리는 AI가 채운다.
+    const roomPlayers = g.online?.players ?? [];
+    const me = roomPlayers.find((p) => p.id === g.online?.playerId);
+    const orderedHumans = me ? [me, ...roomPlayers.filter((p) => p.id !== me.id)] : [];
+    const colors = orderedHumans.map((p) => p.color);
+    while (colors.length < 4) colors.push(PLAYER_COLORS[colors.length] ?? '#ffc16b');
+
+    const humanRacers: Racer[] = orderedHumans.map((p) => {
+      const local = p.id === g.online?.playerId;
+      return {
+        id: local ? 'player' : `net-${p.id}`,
+        name: p.name,
+        characterId: local ? g.characterId : p.characterId,
+        jersey: p.color,
+        build: local ? g.build : { slots: {}, wheels: [null, null, null, null] },
+        items: local ? itemsMap(g.inventory) : {},
+        isPlayer: local,
+        controlIndex: local ? 0 : undefined,
+        loadout: local ? (g.loadout ?? undefined) : undefined,
+        team: teamMode ? p.team : undefined,
+      };
+    });
+
+    const botCount = Math.max(0, 4 - humanRacers.length);
+    const botRacers = g.bots.slice(0, botCount).map((r) => ({ ...r, isPlayer: false }));
+    const list = [...humanRacers, ...botRacers].slice(0, 4);
+
     const actors: Actor[] = list.map((racer, i) => {
       const start = STARTS[i];
       const spec = specFor(racer);
-      const team = teamMode ? racer.team ?? (i < 2 ? 0 : 1) : undefined;
+      const playerId = racer.id === 'player' ? g.online?.playerId : racer.id.startsWith('net-') ? racer.id.slice(4) : null;
+      const human = playerId ? orderedHumans.find((p) => p.id === playerId) : undefined;
+      const own = human ? orderedHumans.findIndex((p) => p.id === human.id) : orderedHumans.length + (i - orderedHumans.length);
+      const team = teamMode ? racer.team ?? (i % 2) : undefined;
       return {
-        own: team ?? i, team,
+        own, team,
         dmg: 0, fireCd: 0, flash: 0, aimCd: Math.random(), netBuildKey: '',
         netId: racer.id.startsWith('net-') ? racer.id.slice(4) : undefined,
-        racer, color: colors[i], st: newVehicleState(start.x, start.z, start.heading),
+        racer, color: human?.color ?? colors[own] ?? PLAYER_COLORS[i % PLAYER_COLORS.length], st: newVehicleState(start.x, start.z, start.heading),
         spec, items: [...(racer.loadout?.items ?? ['oil'])],
         usedPress: racer.controlIndex === undefined ? 0 : getControl(racer.controlIndex).itemPresses,
         usedJump: racer.controlIndex === undefined ? 0 : getControl(racer.controlIndex).jumpPresses ?? 0,
@@ -219,7 +246,7 @@ export function BattleWorld() {
         previousX: start.x, previousZ: start.z, jumpCd: 0, wasAir: false, spin: 0,
       };
     });
-    const paint = new TerritoryMap(teamMode ? [TEAM_COLORS[0], TEAM_COLORS[1]] : colors);
+    const paint = new TerritoryMap(teamMode ? [TEAM_COLORS[0], TEAM_COLORS[1]] : list.map((_, i) => actors[i].color));
     return {
       teamMode, myTeam, actors, paint, readyEnds: 0, playEnds: 0, finishedAt: 0, submitted: false, shake: 0,
       droplets: Array.from({ length: 150 }, (): Droplet => ({ x: 0, y: -100, z: 0, vx: 0, vy: 0, vz: 0, life: 0, scale: 0, color: '#ffffff' })),
@@ -461,6 +488,11 @@ export function BattleWorld() {
         a.flash = Math.max(0, a.flash - dt);
         // ── 온라인 참가자: 네트워크 위치를 따라가는 퍼펫 ──
         const remote = a.netId ? freshRemote(a.netId) : null;
+        if (a.netId && !remote) {
+          // 상대가 아직 배틀에 들어오지 않았거나 연결이 끊겼으면 AI로 대체하지 않는다.
+          sim.paint.resetTrail(i);
+          return;
+        }
         if (remote) {
           const k = Math.min(1, dt * 12);
           st.x += (remote.x - st.x) * k; st.z += (remote.z - st.z) * k; st.y += (remote.y - st.y) * k;
