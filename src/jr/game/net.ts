@@ -67,6 +67,10 @@ function safeName(name: string) {
   return name.trim().slice(0, 12) || '레이서';
 }
 
+function editableName(name: string) {
+  return name.trim().slice(0, 12);
+}
+
 function nextColor(members: RoomMember[]) {
   return COLORS.find((c) => !members.some((m) => m.color === c)) ?? COLORS[members.length % COLORS.length];
 }
@@ -386,7 +390,7 @@ export class PeerRoom {
         this.broadcastLobby();
         break;
       case 'profile':
-        member.name = safeName(String(msg.name ?? member.name));
+        member.name = editableName(String(msg.name ?? member.name));
         if (typeof msg.characterId === 'string') member.characterId = msg.characterId;
         this.broadcastLobby();
         break;
@@ -449,7 +453,7 @@ export class PeerRoom {
   }
 
   updateProfile(name: string, characterId: string) {
-    this.myName = safeName(name);
+    this.myName = editableName(name);
     this.myCharacter = characterId;
 
     if (this.isHost) {

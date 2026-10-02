@@ -91,7 +91,7 @@ h1, h2, h3, p { margin: 0; }
 .jr-modal.wide { width: min(770px, 100%); }
 .jr-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 25px 28px 20px; border-bottom: 1px solid #26473515; flex-shrink: 0; }
 .jr-modal-header h2 { font-family: var(--font-game); font-size: 24px; font-weight: 400; margin-top: 5px; letter-spacing: -.03em; }
-.jr-modal-body { padding: 23px 28px 28px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; touch-action: pan-y; }
+.jr-modal-body { padding: 23px 28px 28px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; touch-action: pan-y; min-width: 0; }
 .jr-character-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
 .jr-character-option { min-width: 0; position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 14px 7px 12px; background: #fffcf3; border: 1px solid #6e8b6930; border-radius: 17px; color: var(--ink); }
 .jr-character-option:hover { transform: translateY(-3px); border-color: #d99b7d; }
@@ -121,6 +121,9 @@ h1, h2, h3, p { margin: 0; }
 .jr-setting > span { display: flex; align-items: center; gap: 10px; }
 .jr-setting strong { background: #cfe2c0; padding: 5px 11px; font-size: 10px; border-radius: 7px; }
 .jr-help { margin-top: 22px; }.jr-help h3 { font-family: var(--font-game); font-size: 17px; font-weight: 400; margin: 14px 0 6px; }.jr-help p { color: #798977; font-size: 11px; line-height: 1.9; }
+.jr-code-input-wrap { position: relative; width: 100%; min-width: 0; overflow: hidden; }
+.jr-code-input-hitarea { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; min-width: 0; margin: 0; padding: 0; border: 0; outline: 0; opacity: 0; background: transparent; color: transparent; cursor: text; caret-color: transparent; }
+.jr-code-input-hitarea:focus { outline: 0; }
 .jr-room-join { display: flex; gap: 9px; margin-top: 18px; }.jr-room-join input { flex: 1; min-width: 0; width: 120px; letter-spacing: .18em; text-align: center; border: 1px solid #627d623f; padding: 12px; border-radius: 10px; background: #fffbf3; }.jr-room-join button { padding: 10px; background: #d8e2ce; font-size: 10px; border: 0; border-radius: 10px; }
 .jr-room-code { text-align: center; margin-bottom: 17px; padding: 17px 0; border-bottom: 1px solid #324d3622; }.jr-room-code span, .jr-room-code small { display: block; font-size: 10px; color: #7e8d74; letter-spacing: .1em; }.jr-room-code strong { display: block; font-family: var(--font-game); letter-spacing: .2em; font-size: 40px; margin: 5px 0; }
 .jr-room-share { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }

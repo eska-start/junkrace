@@ -334,8 +334,14 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
             </div>
             <p className="text-xs text-slate-400 mb-3">친구에게 받은 5자리 방 코드를 입력하세요.</p>
 
-            <button type="button" className="w-full" onClick={() => document.getElementById('jr-join-code')?.focus()} aria-label="방 코드 입력">
-              <div className="grid grid-cols-5 gap-1.5">
+            <div className="jr-code-input-wrap">
+              <div
+                className="grid grid-cols-5 gap-1.5"
+                role="button"
+                tabIndex={-1}
+                onClick={() => document.getElementById('jr-join-code')?.focus()}
+                aria-label="방 코드 입력"
+              >
                 {Array.from({ length: 5 }, (_, i) => (
                   <div
                     key={i}
@@ -345,21 +351,21 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
                   </div>
                 ))}
               </div>
-            </button>
 
-            <input
-              id="jr-join-code"
-              value={joinCode}
-              maxLength={5}
-              aria-label="방 코드"
-              autoCapitalize="characters"
-              autoComplete="off"
-              spellCheck={false}
-              inputMode="text"
-              className="mt-2 w-full h-1 opacity-0 absolute pointer-events-none"
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
-              onKeyDown={(e) => { if (e.key === 'Enter' && valid) join(); }}
-            />
+              <input
+                id="jr-join-code"
+                value={joinCode}
+                maxLength={5}
+                aria-label="방 코드"
+                autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
+                inputMode="text"
+                className="jr-code-input-hitarea"
+                onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
+                onKeyDown={(e) => { if (e.key === 'Enter' && valid) join(); }}
+              />
+            </div>
 
             <button
               disabled={!valid}
@@ -561,10 +567,13 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
             <input
               value={me?.name ?? name}
               maxLength={12}
+              placeholder="닉네임을 입력하세요"
               onChange={(e) => {
-                setName(e.target.value);
-                act('profile', { name: e.target.value, characterId: me?.characterId ?? characterId });
+                const nextName = e.target.value.slice(0, 12);
+                setName(nextName);
+                act('profile', { name: nextName, characterId: me?.characterId ?? characterId });
               }}
+              onBlur={() => rememberName(name)}
             />
           </div>
 
