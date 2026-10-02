@@ -152,7 +152,7 @@ function LocalMultiplayer({ onClose }: { onClose: () => void }) {
 
 function Multiplayer({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<'online' | 'local'>('online');
-  return <Modal title={tab === 'online' ? '친구와 온라인 대전.' : '한 화면에서, 함께.'} label={tab === 'online' ? 'ONLINE LOBBY' : 'LOCAL MULTIPLAYER'} onClose={onClose}>
+  return <Modal wide title={tab === 'online' ? '친구와 온라인 대전.' : '한 화면에서, 함께.'} label={tab === 'online' ? 'ONLINE LOBBY' : 'LOCAL MULTIPLAYER'} onClose={onClose}>
     <div className="jr-lobby-tabs">
       <button className={tab === 'online' ? 'active' : ''} onClick={() => setTab('online')}>온라인 대기실</button>
       <button className={tab === 'local' ? 'active' : ''} onClick={() => setTab('local')}>로컬 (한 PC)</button>
