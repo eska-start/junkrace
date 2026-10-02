@@ -1,339 +1,619 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CHARACTERS } from '../data/items';
-import { useGame, MODE_LABEL, TEAM_LABEL, TEAM_COLORS, type GameMode } from '../store';
+import { useGame, MODE_LABEL, TEAM_COLORS, type GameMode } from '../store';
 import { sfx } from '../game/audio';
 import { CharacterFace } from './CharacterFace';
 import { GameIcon } from './GameIcon';
+import { getActiveRoom, PeerRoom, setActiveRoom, MAX_PLAYERS, roomFromUrl as networkRoomFromUrl } from '../game/net';
 
-export interface RoomPlayer { id: string; name: string; characterId: string; color: string; team: number; ready: boolean; isHost: boolean }
-export interface RoomMessage { id: number; name: string; text: string; playerId: string | null; system: boolean }
-export interface RoomData { code: string; hostId: string; status: string; mode: GameMode; round: number; maxPlayers: number; players: RoomPlayer[]; messages: RoomMessage[] }
-interface SavedSession { code: string; playerId: string; seenRound: number }
+export interface RoomPlayer {
+  id: string;
+  name: string;
+  characterId: string;
+  color: string;
+  team: number;
+  ready: boolean;
+  isHost: boolean;
+}
+export interface RoomMessage {
+  id: number;
+  name: string;
+  text: string;
+  playerId: string | null;
+  system: boolean;
+}
+export interface RoomData {
+  code: string;
+  hostId: string;
+  status: string;
+  mode: GameMode;
+  round: number;
+  maxPlayers: number;
+  players: RoomPlayer[];
+  messages: RoomMessage[];
+}
 
-const SESSION_KEY = 'jr-online-session';
 const NAME_KEY = 'jr-player-name';
 
-export function loadSession(): SavedSession | null {
-  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null') as SavedSession | null; } catch { return null; }
-}
-function saveSession(s: SavedSession | null) {
-  try { if (s) sessionStorage.setItem(SESSION_KEY, JSON.stringify(s)); else sessionStorage.removeItem(SESSION_KEY); } catch { /* optional */ }
-}
-/** 초대 링크(?invite=CODE, 이전 ?room=CODE도 호환)에서 방 코드 읽기 */
-export function roomFromUrl(): string | null {
-  const params = new URLSearchParams(location.search);
-  const q = params.get('invite') ?? params.get('room');
-  const h = /(?:invite|room)=([A-Za-z0-9]+)/.exec(location.hash)?.[1];
-  return (q ?? h ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || null;
+export function loadSession() {
+  const room = getActiveRoom();
+  if (!room || room.status !== 'open' || !room.myId) return null;
+  return { code: room.state.code, playerId: room.myId, seenRound: room.state.round };
 }
 
-async function api<T>(url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, body === undefined ? { cache: 'no-store' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw Object.assign(new Error(data.error ?? '요청에 실패했습니다.'), { status: res.status });
-  return data;
+export function roomFromUrl() {
+  return networkRoomFromUrl();
 }
 
-/** 게임 중에도 방 접속을 유지하는 하트비트 (App에서 사용) */
+function snapshot(room: PeerRoom): RoomData {
+  const hostId = room.state.members.find((m) => m.host)?.id ?? '';
+  return {
+    code: room.state.code,
+    hostId,
+    status: room.state.inGame ? 'playing' : 'waiting',
+    mode: room.state.mode,
+    round: room.state.round,
+    maxPlayers: room.capacity,
+    players: room.state.members.map((m) => ({
+      id: m.id,
+      name: m.name,
+      characterId: m.characterId,
+      color: m.color,
+      team: m.team,
+      ready: m.ready,
+      isHost: m.host,
+    })),
+    messages: room.state.chat.map((c) => ({
+      id: c.id,
+      name: c.name,
+      text: c.text,
+      playerId: c.sys ? null : (room.state.members.find((m) => m.name === c.name)?.id ?? null),
+      system: Boolean(c.sys),
+    })),
+  };
+}
+
+/** PeerJS 연결 자체가 방 연결을 유지하므로 HTTP heartbeat는 필요하지 않습니다. */
 export function useOnlineHeartbeat() {
-  const online = useGame((s) => s.online);
-  useEffect(() => {
-    if (!online) return;
-    const ping = () => { void fetch(`/api/rooms/${online.code}?playerId=${online.playerId}`, { cache: 'no-store' }).catch(() => undefined); };
-    const id = setInterval(ping, 8000);
-    return () => clearInterval(id);
-  }, [online]);
+  useEffect(() => undefined, []);
 }
 
 export function CopyButton({ value, label, icon }: { value: string; label: string; icon: 'copy' | 'link' }) {
   const [copied, setCopied] = useState(false);
+
   const copy = async () => {
     sfx.click();
     try {
-      if (navigator.clipboard?.writeText && window.isSecureContext) await navigator.clipboard.writeText(value);
-      else {
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(value);
+      } else {
         const area = document.createElement('textarea');
-        area.value = value; area.setAttribute('readonly', ''); area.style.position = 'fixed'; area.style.opacity = '0';
-        document.body.appendChild(area); area.select(); document.execCommand('copy'); document.body.removeChild(area);
+        area.value = value;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        document.body.removeChild(area);
       }
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch { setCopied(false); }
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      setCopied(false);
+    }
   };
-  return <button type="button" className={`jr-copy-button ${copied ? 'done' : ''}`} onClick={copy}>
-    <GameIcon name={copied ? 'check' : icon} size={15} />{copied ? '복사됨!' : label}
-  </button>;
+
+  return (
+    <button type="button" className="jr-copy-button" onClick={copy}>
+      <GameIcon name={copied ? 'check' : icon} size={15} />
+      {copied ? '복사됨!' : label}
+    </button>
+  );
 }
 
 function ShareInviteButton({ code, link }: { code: string; link: string }) {
   const [sent, setSent] = useState(false);
+
   const share = async () => {
     sfx.click();
     try {
       if (navigator.share) {
-        await navigator.share({ title: '고물 레이서즈 초대', text: `방 코드 ${code} · 링크를 누르면 바로 참가해요!`, url: link });
-      } else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(link);
+        await navigator.share({
+          title: '고물 레이서즈 초대',
+          text: `같이 해요! 방 코드: ${code}`,
+          url: link,
+        });
+      } else {
+        await navigator.clipboard?.writeText(link);
       }
       setSent(true);
-      window.setTimeout(() => setSent(false), 1600);
-    } catch { /* 사용자가 공유 창을 닫은 경우 */ }
+      window.setTimeout(() => setSent(false), 1400);
+    } catch {
+      // 공유 취소
+    }
   };
-  return <button type="button" className={`jr-copy-button ${sent ? 'done' : ''}`} onClick={share}>
-    <GameIcon name={sent ? 'check' : 'people'} size={15} />{sent ? '초대 준비됨!' : '친구 초대'}
-  </button>;
+
+  return (
+    <button type="button" className={`jr-copy-button ${sent ? 'done' : ''}`} onClick={share}>
+      <GameIcon name={sent ? 'check' : 'people'} size={15} />
+      {sent ? '초대 준비됨!' : '친구 초대'}
+    </button>
+  );
 }
 
 export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
   const characterId = useGame((s) => s.characterId);
+  const paintColor = useGame((s) => s.paintColor);
+  const defaultMode = useGame((s) => s.gameMode);
+
+  const [mode, setMode] = useState<GameMode>(defaultMode);
   const [inviteCode] = useState(roomFromUrl);
-  const [name, setName] = useState(() => { try { return localStorage.getItem(NAME_KEY) ?? ''; } catch { return ''; } });
-  const [joinCode, setJoinCode] = useState(() => inviteCode ?? '');
-  const [session, setSession] = useState<SavedSession | null>(() => {
-    const saved = loadSession();
-    // 링크 초대가 현재 세션보다 우선한다. 같은 방이면 기존 참가자 정보를 그대로 사용한다.
-    return inviteCode && saved?.code !== inviteCode ? null : saved;
+  const [name, setName] = useState(() => {
+    try {
+      return localStorage.getItem(NAME_KEY) ?? '';
+    } catch {
+      return '';
+    }
   });
-  const [room, setRoom] = useState<RoomData | null>(null);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [joinCode, setJoinCode] = useState(inviteCode ?? '');
+  const [peerRoom, setPeerRoom] = useState<PeerRoom | null>(() => {
+    const room = getActiveRoom();
+    return room && room.status !== 'closed' ? room : null;
+  });
+  const [, setVersion] = useState(0);
   const [chat, setChat] = useState('');
-  const chatList = useRef<HTMLUListElement>(null);
-  const autoJoined = useRef(false);
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
+  const enteredRound = useRef<number | null>(null);
+  const chatRef = useRef<HTMLUListElement>(null);
 
-  const remember = (n: string) => { try { localStorage.setItem(NAME_KEY, n); } catch { /* optional */ } };
-  const displayName = () => name.trim() || `레이서${Math.floor(Math.random() * 900 + 100)}`;
+  useEffect(() => {
+    if (!peerRoom) return;
+    const off = peerRoom.subscribe(() => setVersion((v) => v + 1));
+    setVersion((v) => v + 1);
+    return off;
+  }, [peerRoom]);
 
-  const enterGame = useCallback((r: RoomData, s: SavedSession) => {
-    const next = { ...s, seenRound: r.round };
-    saveSession(next); setSession(next);
+  const room = peerRoom ? snapshot(peerRoom) : null;
+  const myId = peerRoom?.myId ?? '';
+
+  const rememberName = (next: string) => {
+    try {
+      localStorage.setItem(NAME_KEY, next);
+    } catch {
+      // optional
+    }
+  };
+
+  const enterGame = useCallback((data: RoomData, roomInstance: PeerRoom) => {
+    if (!data.round || enteredRound.current === data.round) return;
+    if (useGame.getState().phase !== 'select') return;
+
+    enteredRound.current = data.round;
     const game = useGame.getState();
-    const me = r.players.find((p) => p.id === s.playerId);
-    if (me) { game.setCharacter(me.characterId); game.setPaintColor(me.color); }
-    game.setOnline({ code: r.code, playerId: s.playerId, players: r.players.map((p) => ({ id: p.id, name: p.name, characterId: p.characterId, color: p.color, team: p.team })) });
-    useGame.setState({ gameMode: r.mode });
-    game.setLocalPlayers([], r.code);
+    const me = data.players.find((p) => p.id === roomInstance.myId);
+
+    if (me) {
+      game.setCharacter(me.characterId);
+      game.setPaintColor(me.color);
+    }
+
+    game.setOnline({
+      code: data.code,
+      playerId: roomInstance.myId,
+      players: data.players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        characterId: p.characterId,
+        color: p.color,
+        team: p.team,
+      })),
+    });
+    game.setGameMode(data.mode);
+    game.setLocalPlayers([], data.code);
     game.startCollect();
     onStarted();
   }, [onStarted]);
 
-  const applyRoom = useCallback((r: RoomData) => {
-    setRoom(r);
-    const s = sessionRef.current;
-    if (!s) return;
-    if (!r.players.some((p) => p.id === s.playerId)) {
-      saveSession(null); setSession(null); setRoom(null); useGame.getState().setOnline(null);
-      setError('방에서 나가졌습니다.');
-      return;
-    }
-    if (r.status === 'playing' && r.round > s.seenRound) enterGame(r, s);
-  }, [enterGame]);
-
-  // ── 폴링 ──
   useEffect(() => {
-    if (!session) return;
-    let alive = true;
-    const poll = async () => {
-      try {
-        const r = await api<RoomData>(`/api/rooms/${session.code}?playerId=${session.playerId}`);
-        if (alive) applyRoom(r);
-      } catch (e) {
-        const status = (e as { status?: number }).status;
-        if (alive && (status === 404 || status === 403)) {
-          saveSession(null); setSession(null); setRoom(null); useGame.getState().setOnline(null);
-          setError((e as Error).message);
-        }
-      }
-    };
-    void poll();
-    const id = setInterval(poll, 1000);
-    return () => { alive = false; clearInterval(id); };
-  }, [session, applyRoom]);
+    if (!peerRoom || peerRoom.status !== 'open') return;
+    if (peerRoom.state.inGame) enterGame(snapshot(peerRoom), peerRoom);
+  }, [peerRoom, room?.round, room?.status, enterGame]);
 
-  useEffect(() => { chatList.current?.scrollTo({ top: chatList.current.scrollHeight }); }, [room?.messages.length]);
-
-  const create = async () => {
-    setBusy(true); setError(''); sfx.click();
-    try {
-      const n = displayName(); remember(n); setName(n);
-      const r = await api<{ code: string; playerId: string }>('/api/rooms', { name: n, characterId, mode: useGame.getState().gameMode });
-      const s = { code: r.code, playerId: r.playerId, seenRound: 0 };
-      saveSession(s); setSession(s);
-      history.replaceState(null, '', `${location.pathname}?invite=${r.code}`);
-    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
-  };
-  const join = useCallback(async (codeArg?: string) => {
-    const code = (codeArg ?? joinCode).trim().toUpperCase();
-    if (!code) { setError('방 코드를 입력하세요.'); return; }
-    setBusy(true); setError(''); sfx.click();
-    try {
-      const n = name.trim() || `레이서${Math.floor(Math.random() * 900 + 100)}`; remember(n); setName(n);
-      const r = await api<{ code: string; playerId: string; round: number; room: RoomData }>(`/api/rooms/${code}`, { action: 'join', name: n, characterId });
-      const s = { code: r.code, playerId: r.playerId, seenRound: r.round };
-      saveSession(s); setSession(s); setRoom(r.room);
-      history.replaceState(null, '', `${location.pathname}?invite=${r.code}`);
-    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
-  }, [joinCode, name, characterId]);
-
-  // 초대 링크를 누르면 별도의 코드 입력/확인 버튼 없이 즉시 참가한다.
+  // 얼음땡과 같은 방식: 초대 링크를 열면 코드 입력 없이 바로 참가
   useEffect(() => {
-    if (autoJoined.current || !inviteCode || session?.code === inviteCode) return;
-    autoJoined.current = true;
-    saveSession(null);
-    void join(inviteCode);
-  }, [inviteCode, session, join]);
+    if (!inviteCode) return;
+    if (peerRoom?.state.code === inviteCode) return;
 
-  const act = async (body: Record<string, unknown>) => {
-    if (!session) return;
-    setError('');
-    try {
-      const r = await api<RoomData & { left?: boolean }>(`/api/rooms/${session.code}`, { ...body, playerId: session.playerId });
-      if (r.left) return;
-      applyRoom(r);
-    } catch (e) { setError((e as Error).message); }
-  };
-  const leave = async () => {
+    peerRoom?.leave();
+    const next = PeerRoom.join(inviteCode, name.trim() || '레이서', characterId);
+    setActiveRoom(next);
+    setPeerRoom(next);
+    // 초대 링크는 최초 진입 때 한 번만 처리
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inviteCode]);
+
+  useEffect(() => {
+    if (room?.messages.length) chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
+  }, [room?.messages.length]);
+
+  const create = () => {
+    const n = name.trim() || `레이서${Math.floor(Math.random() * 900 + 100)}`;
+    rememberName(n);
+    setName(n);
     sfx.click();
-    await act({ action: 'leave' });
-    saveSession(null); setSession(null); setRoom(null); useGame.getState().setOnline(null);
-    history.replaceState(null, '', location.pathname);
+
+    peerRoom?.leave();
+    const next = PeerRoom.host(n, characterId, paintColor, mode);
+    setActiveRoom(next);
+    setPeerRoom(next);
   };
 
-  // ── 초대 링크: 클릭 즉시 자동 참가 ──
-  if (!session && inviteCode) {
-    return <div className="jr-invite-joining">
-      <span className="jr-invite-icon"><GameIcon name="link" size={28} /></span>
-      <span className="jr-eyebrow">HOST INVITATION · {inviteCode}</span>
-      <h3>{error ? '초대방에 들어가지 못했어요' : '호스트의 방에 참가하는 중…'}</h3>
-      <p>{error || '닉네임과 캐릭터를 자동으로 적용하고 있습니다.'}</p>
-      {error && <button className="jr-primary full" disabled={busy} onClick={() => { autoJoined.current = true; setError(''); void join(inviteCode); }}>다시 참가하기<GameIcon name="arrow" /></button>}
-    </div>;
+  const join = useCallback((codeArg?: string) => {
+    const code = (codeArg ?? joinCode).trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+    if (code.length !== 5) return;
+
+    const n = name.trim() || `레이서${Math.floor(Math.random() * 900 + 100)}`;
+    rememberName(n);
+    setName(n);
+    sfx.click();
+
+    peerRoom?.leave();
+    const next = PeerRoom.join(code, n, characterId);
+    setActiveRoom(next);
+    setPeerRoom(next);
+  }, [joinCode, name, characterId, peerRoom]);
+
+  const leave = () => {
+    sfx.click();
+    peerRoom?.leave();
+    setActiveRoom(null);
+    setPeerRoom(null);
+    useGame.getState().setOnline(null);
+    useGame.getState().setLocalPlayers([]);
+
+    const url = new URL(location.href);
+    url.searchParams.delete('invite');
+    url.searchParams.delete('room');
+    history.replaceState(null, '', `${url.pathname}${url.search}`);
+  };
+
+  if (peerRoom && peerRoom.status === 'connecting') {
+    return (
+      <div className="jr-invite-joining">
+        <span className="jr-invite-icon"><GameIcon name="people" size={25} /></span>
+        <span className="jr-eyebrow">{peerRoom.state.code}</span>
+        <h3>{peerRoom.error ? '연결에 실패했어요' : '방에 연결하는 중…'}</h3>
+        <p>{peerRoom.error || '얼음땡처럼 다른 기기끼리 직접 연결하고 있습니다.'}</p>
+      </div>
+    );
   }
 
-  // ── 방 입장 전: 호스트가 방 생성 / 초대받은 사람은 코드 참가 ──
-  if (!session) {
-    return <div>
-      <div className="jr-host-intro">
-        <span className="jr-invite-icon"><GameIcon name="people" size={24} /></span>
-        <div><strong>내가 호스트가 되어 친구를 초대해요</strong><small>방을 만들면 전용 코드와 바로 참가 링크가 생성됩니다.</small></div>
+  if (peerRoom && peerRoom.status === 'error') {
+    return (
+      <div className="jr-invite-joining">
+        <span className="jr-invite-icon"><GameIcon name="link" size={25} /></span>
+        <h3>방에 들어가지 못했어요</h3>
+        <p>{peerRoom.error || '연결 오류가 발생했어요.'}</p>
+        <div className="jr-lobby-actions">
+          <button className="jr-lobby-btn ghost" onClick={() => { peerRoom.leave(); setPeerRoom(null); }}>다시 입력</button>
+          <button className="jr-lobby-btn" onClick={() => {
+            peerRoom.leave();
+            const next = PeerRoom.join(peerRoom.state.code, name || '레이서', characterId);
+            setActiveRoom(next);
+            setPeerRoom(next);
+          }}>다시 참가</button>
+        </div>
       </div>
-      <div className="jr-lobby-field">
-        <label htmlFor="jr-name">내 닉네임</label>
-        <input id="jr-name" value={name} maxLength={12} placeholder="닉네임 (최대 12자)" onChange={(e) => setName(e.target.value)} />
-      </div>
-      <button className="jr-primary full" disabled={busy} onClick={create}>호스트로 방 만들기<GameIcon name="arrow" /></button>
-      <div className="jr-lobby-divider">초대 코드를 받았나요?</div>
-      <div className="jr-lobby-join">
-        <input value={joinCode} maxLength={8} placeholder="INVITE CODE" aria-label="초대 코드" onChange={(e) => setJoinCode(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === 'Enter') void join(); }} />
-        <button disabled={busy} onClick={() => void join()}>바로 참가</button>
-      </div>
-      <p className="jr-footnote">초대 링크를 받은 경우 링크를 누르는 것만으로 자동 참가합니다.</p>
-      {error && <p className="jr-lobby-error">{error}</p>}
-    </div>;
+    );
   }
 
-  if (!room) return <p className="jr-lobby-status">대기실에 연결하는 중…</p>;
+  // ── 얼음땡과 같은 입장 화면: 코드 참가 | 또는 | 방 만들기 ──
+  if (!peerRoom || peerRoom.status !== 'open' || !room) {
+    const valid = joinCode.length === 5;
 
-  const me = room.players.find((p) => p.id === session.playerId);
-  const isHost = room.hostId === session.playerId;
-  const others = room.players.filter((p) => p.id !== room.hostId);
-  const allReady = others.every((p) => p.ready);
+    return (
+      <div>
+        <div className="jr-lobby-field">
+          <label htmlFor="jr-name-entry">내 닉네임</label>
+          <input
+            id="jr-name-entry"
+            value={name}
+            maxLength={12}
+            placeholder="닉네임 (최대 12자)"
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+          <section className="rounded-3xl bg-white p-4 border border-[#26473518] shadow-[0_10px_30px_-12px_rgba(30,80,60,.35)]">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="w-9 h-9 rounded-xl bg-[#e8f4ff] text-[#4489c8] grid place-items-center">
+                <GameIcon name="link" size={18} />
+              </span>
+              <div className="font-game text-lg">코드로 참가</div>
+            </div>
+            <p className="text-xs text-slate-400 mb-3">친구에게 받은 5자리 방 코드를 입력하세요.</p>
+
+            <button type="button" className="w-full" onClick={() => document.getElementById('jr-join-code')?.focus()} aria-label="방 코드 입력">
+              <div className="grid grid-cols-5 gap-1.5">
+                {Array.from({ length: 5 }, (_, i) => (
+                  <div
+                    key={i}
+                    className={`h-14 rounded-2xl grid place-items-center text-2xl font-extrabold tracking-widest ${joinCode[i] ? 'bg-slate-900 text-white' : i === joinCode.length ? 'bg-[#eef8ff] ring-2 ring-[#50a8e8] text-slate-300' : 'bg-slate-100 text-slate-300'}`}
+                  >
+                    {joinCode[i] ?? ''}
+                  </div>
+                ))}
+              </div>
+            </button>
+
+            <input
+              id="jr-join-code"
+              value={joinCode}
+              maxLength={5}
+              aria-label="방 코드"
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+              inputMode="text"
+              className="mt-2 w-full h-1 opacity-0 absolute pointer-events-none"
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
+              onKeyDown={(e) => { if (e.key === 'Enter' && valid) join(); }}
+            />
+
+            <button
+              disabled={!valid}
+              onClick={() => join()}
+              className={`mt-3 w-full h-12 rounded-2xl font-game text-lg ${valid ? 'bg-gradient-to-r from-[#51b5f0] to-[#4d7ff0] text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}
+            >
+              참가하기
+            </button>
+          </section>
+
+          <section className="rounded-3xl bg-white p-4 border border-[#26473518] shadow-[0_10px_30px_-12px_rgba(30,80,60,.35)]">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-9 h-9 rounded-xl bg-[#fff0df] text-[#e58c49] grid place-items-center">
+                <GameIcon name="people" size={18} />
+              </span>
+              <div className="font-game text-lg">방 만들기</div>
+            </div>
+            <div className="text-xs text-slate-400 mb-2">내가 호스트가 되어 친구에게 5자리 코드를 보내세요.</div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {(['ffa', 'team'] as GameMode[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => { sfx.click(); setMode(m); }}
+                  className={`rounded-2xl p-3 text-left transition ${mode === m ? 'bg-slate-900 text-white shadow' : 'bg-slate-50 text-slate-600'}`}
+                >
+                  <div className="font-game">{MODE_LABEL[m]}</div>
+                  <div className={`text-[10px] mt-0.5 ${mode === m ? 'text-white/60' : 'text-slate-400'}`}>
+                    {m === 'ffa' ? 'FREE FOR ALL' : '2 VS 2 TEAM'}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={create}
+              className="mt-3 w-full h-12 rounded-2xl bg-gradient-to-r from-[#f4a78e] to-[#f6c16b] text-[#293c32] font-game text-lg shadow-lg"
+            >
+              방 만들기<GameIcon name="arrow" size={17} />
+            </button>
+          </section>
+        </div>
+
+        <div className="rounded-2xl bg-[#26473508] px-3 py-2 mt-3 text-[11px] text-slate-400 text-center">
+          얼음땡처럼 다른 기기끼리 직접 연결됩니다. 최대 {MAX_PLAYERS}명까지 함께할 수 있어요.
+        </div>
+        <p className="jr-footnote text-center">초대 링크를 받은 경우 코드를 입력하지 않아도 바로 참가합니다.</p>
+      </div>
+    );
+  }
+
+  const me = room.players.find((p) => p.id === myId);
+  const isHost = me?.isHost ?? false;
+  const guests = room.players.filter((p) => !p.isHost);
   const playing = room.status === 'playing';
-  // 현재 Arena/배포 도메인을 그대로 사용하므로 localhost에 종속되지 않는다.
   const link = `${location.origin}${location.pathname}?invite=${room.code}`;
 
-  const seat = (p: RoomPlayer) => {
-    const ch = CHARACTERS.find((c) => c.id === p.characterId) ?? CHARACTERS[0];
-    return <div key={p.id} className={`jr-lobby-seat ${p.id === session.playerId ? 'me' : ''}`}>
-      <i className="dot" style={{ background: room.mode === 'team' ? TEAM_COLORS[p.team] : p.color }} />
-      <CharacterFace species={ch.species} size={36} />
-      <div className="info">
-        <strong>{p.name}{p.id === session.playerId ? ' (나)' : ''}</strong>
-        <small>{ch.name}</small>
-        <span>
-          {p.isHost ? <span className="badge host">방장</span> : <span className={`badge ${p.ready ? 'ready' : ''}`}>{p.ready ? '준비 완료' : '대기 중'}</span>}
-          {isHost && !p.isHost && <button className="badge" style={{ border: 0, marginLeft: 4 }} onClick={() => void act({ action: 'kick', targetId: p.id })}>강퇴</button>}
-        </span>
-      </div>
-    </div>;
+  const act = (action: string, value?: unknown) => {
+    switch (action) {
+      case 'ready':
+        peerRoom.setReady(Boolean(value));
+        break;
+      case 'mode':
+        peerRoom.setOptions(value === 'team' ? 'team' : 'ffa');
+        break;
+      case 'start':
+        peerRoom.start();
+        break;
+      case 'kick':
+        if (typeof value === 'string') peerRoom.kick(value);
+        break;
+      case 'chat':
+        if (typeof value === 'string') peerRoom.chat(value);
+        break;
+      case 'profile':
+        if (value && typeof value === 'object') {
+          const v = value as { name?: string; characterId?: string };
+          peerRoom.updateProfile(v.name ?? name, v.characterId ?? characterId);
+        }
+        break;
+      case 'return':
+        peerRoom.returnToLobby();
+        break;
+    }
   };
 
-  return <div>
-    <div className={`jr-room-code ${isHost ? 'host-room' : 'guest-room'}`}>
-      <span>{isHost ? 'HOST INVITE ROOM' : 'INVITED ROOM'}</span>
-      <strong>{room.code}</strong>
-      <small>{room.players.length} / {room.maxPlayers} PLAYERS · {MODE_LABEL[room.mode]} · {playing ? '게임 진행 중' : '친구 기다리는 중'}</small>
-      {isHost ? <>
-        <p className="jr-invite-help">친구에게 코드 또는 링크를 보내세요. 초대 링크는 누르는 즉시 이 방으로 연결됩니다.</p>
-        <div className="jr-room-share">
-          <CopyButton value={room.code} label="초대 코드 복사" icon="copy" />
-          <CopyButton value={link} label="바로 참가 링크 복사" icon="link" />
-          <ShareInviteButton code={room.code} link={link} />
+  return (
+    <div>
+      <section className="rounded-3xl p-4 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#1e293b 0%,#1e3a8a 100%)' }}>
+        <div className="absolute -right-8 -top-10 w-40 h-40 rounded-full bg-sky-400/20 blur-xl" />
+        <div className="relative flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-semibold text-white/60 tracking-[.22em]">ROOM CODE</div>
+            <div className="text-[34px] font-extrabold tracking-[.25em] leading-tight">{room.code}</div>
+          </div>
+          <div className="flex gap-2">
+            <CopyButton value={room.code} label="코드 복사" icon="copy" />
+            <ShareInviteButton code={room.code} link={link} />
+          </div>
         </div>
-      </> : <p className="jr-invite-help">호스트의 초대로 참가했습니다. 준비를 누르고 게임 시작을 기다려 주세요.</p>}
-    </div>
+        <button
+          onClick={() => void navigator.clipboard?.writeText(link)}
+          className="relative mt-2 flex items-center gap-1.5 text-[10px] text-white/60 truncate max-w-full"
+        >
+          <GameIcon name="link" size={12} />
+          <span className="truncate">{link}</span>
+        </button>
+      </section>
 
-    <div className="jr-mode-switch" role="group" aria-label="게임 모드">
-      {(['ffa', 'team'] as GameMode[]).map((m) => <button key={m} className={room.mode === m ? 'active' : ''} disabled={!isHost || playing} onClick={() => { sfx.click(); if (room.mode !== m) void act({ action: 'mode', mode: m }); }}>{MODE_LABEL[m]}</button>)}
-    </div>
-    {!isHost && <p className="jr-lobby-status" style={{ marginTop: 0 }}>게임 모드는 방장이 정해요 · 현재 {MODE_LABEL[room.mode]}</p>}
+      <section className="rounded-3xl bg-white p-3 shadow-sm mt-3">
+        <div className="flex items-center justify-between mb-2 px-1">
+          <span className="font-game">게임 설정</span>
+          {!isHost && <span className="text-[10px] text-slate-400">방장만 변경할 수 있어요</span>}
+        </div>
 
-    {room.mode === 'team' ? (
-      <div className="jr-lobby-teams">
-        {[0, 1].map((t) => {
-          const members = room.players.filter((p) => p.team === t);
-          const canJoin = members.length < 2 && me?.team !== t && !playing;
-          return <div key={t} className="jr-lobby-team" style={{ borderColor: TEAM_COLORS[t] }}>
-            <div className="jr-lobby-team-head" style={{ background: TEAM_COLORS[t] }}>
-              <strong>{TEAM_LABEL[t]}</strong><small>{members.length} / 2</small>
-              {canJoin && <button onClick={() => { sfx.click(); void act({ action: 'team', team: t }); }}>이 팀으로 이동</button>}
-            </div>
-            {Array.from({ length: 2 }, (_, i) => members[i] ? seat(members[i]) : <div key={i} className="jr-lobby-seat empty">빈 자리 · AI</div>)}
-          </div>;
-        })}
+        <div className="grid grid-cols-2 gap-2">
+          {(['ffa', 'team'] as GameMode[]).map((m) => (
+            <button
+              key={m}
+              disabled={!isHost || playing}
+              onClick={() => { sfx.click(); act('mode', m); }}
+              className={`rounded-2xl p-2.5 text-left ${room.mode === m ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-500'}`}
+            >
+              <div className="font-game">{MODE_LABEL[m]}</div>
+              <div className={`text-[10px] ${room.mode === m ? 'text-white/60' : 'text-slate-400'}`}>
+                {m === 'ffa' ? 'FREE FOR ALL' : '2 VS 2 TEAM'}
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-3">
+        <div className="flex items-center justify-between px-1 mb-2">
+          <span className="font-game">플레이어</span>
+          <span className="text-[10px] text-slate-400">{room.players.length} / {room.maxPlayers}</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          {Array.from({ length: room.maxPlayers }, (_, i) => {
+            const p = room.players[i];
+            if (!p) {
+              return (
+                <div key={i} className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/60 h-[84px] flex flex-col items-center justify-center text-[11px] text-slate-400">
+                  빈 자리 · AI
+                </div>
+              );
+            }
+
+            const ch = CHARACTERS.find((c) => c.id === p.characterId) ?? CHARACTERS[0];
+
+            return (
+              <div
+                key={p.id}
+                className={`relative rounded-2xl bg-white h-[84px] flex items-center gap-2 px-3 ${p.id === myId ? 'ring-2 ring-[#50ccb6]' : ''}`}
+              >
+                <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full" style={{ background: room.mode === 'team' ? TEAM_COLORS[p.team] : p.color }} />
+                <CharacterFace species={ch.species} size={38} />
+                <div className="min-w-0 flex-1">
+                  <strong className="block text-[12px] truncate">{p.name}{p.id === myId ? ' (나)' : ''}</strong>
+                  <small className="block text-[10px] text-slate-400">{ch.name}</small>
+                  <span className={`inline-flex mt-1 text-[9px] font-extrabold px-2 py-0.5 rounded-full ${p.isHost ? 'bg-amber-100 text-amber-700' : p.ready ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                    {p.isHost ? '방장' : p.ready ? '준비 완료' : '대기 중'}
+                  </span>
+                </div>
+                {isHost && !p.isHost && (
+                  <button className="absolute left-2 bottom-2 text-[9px] text-slate-400 hover:text-red-500" onClick={() => act('kick', p.id)}>내보내기</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="jr-lobby-chat mt-3">
+        <ul ref={chatRef}>
+          {room.messages.map((m) => (
+            <li key={m.id} className={m.system ? 'sys' : ''}>
+              {m.system ? `· ${m.text}` : <><b>{m.name}</b>{m.text}</>}
+            </li>
+          ))}
+        </ul>
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          if (chat.trim()) {
+            act('chat', chat);
+            setChat('');
+          }
+        }}>
+          <input value={chat} maxLength={40} placeholder="메시지 보내기" onChange={(e) => setChat(e.target.value)} />
+          <button type="submit">전송</button>
+        </form>
+      </section>
+
+      <section className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end mt-3">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="jr-lobby-field mb-0">
+            <label>내 닉네임</label>
+            <input
+              value={me?.name ?? name}
+              maxLength={12}
+              onChange={(e) => {
+                setName(e.target.value);
+                act('profile', { name: e.target.value, characterId: me?.characterId ?? characterId });
+              }}
+            />
+          </div>
+
+          <div className="jr-lobby-field mb-0">
+            <label>내 캐릭터</label>
+            <select
+              value={me?.characterId ?? characterId}
+              onChange={(e) => {
+                useGame.getState().setCharacter(e.target.value);
+                act('profile', { name: me?.name ?? name, characterId: e.target.value });
+              }}
+            >
+              {CHARACTERS.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.tagline}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          {!isHost && (
+            <button
+              className={`jr-lobby-btn min-w-[150px] ${me?.ready ? '' : 'ready'}`}
+              onClick={() => { sfx.click(); act('ready', !me?.ready); }}
+            >
+              {me?.ready ? '준비 취소' : '준비 완료'}
+            </button>
+          )}
+
+          {isHost && !playing && (
+            <button
+              className="jr-primary min-w-[180px]"
+              disabled={!peerRoom.allReady}
+              onClick={() => { sfx.click(); act('start'); }}
+            >
+              {peerRoom.allReady ? (guests.length ? '게임 시작' : '혼자 시작 (AI와 대결)') : '친구가 준비할 때까지 대기'}
+              <GameIcon name="arrow" size={17} />
+            </button>
+          )}
+
+          {isHost && playing && (
+            <button className="jr-primary min-w-[180px]" onClick={() => { sfx.click(); act('return'); }}>
+              대기실로 돌아가기<GameIcon name="arrow" size={17} />
+            </button>
+          )}
+        </div>
+      </section>
+
+      <div className="jr-lobby-actions" style={{ marginTop: 10 }}>
+        <button className="jr-lobby-btn ghost" onClick={leave}>방 나가기</button>
       </div>
-    ) : (
-      <div className="jr-lobby-players">
-        {Array.from({ length: room.maxPlayers }, (_, i) => room.players[i] ? seat(room.players[i]) : <div key={i} className="jr-lobby-seat empty">빈 자리 · AI</div>)}
-      </div>
-    )}
-
-    <div className="jr-lobby-field">
-      <label htmlFor="jr-char">내 캐릭터</label>
-      <select id="jr-char" value={me?.characterId ?? characterId} disabled={Boolean(me?.ready) || playing} onChange={(e) => { useGame.getState().setCharacter(e.target.value); void act({ action: 'update', characterId: e.target.value }); }}>
-        {CHARACTERS.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.tagline}</option>)}
-      </select>
     </div>
-
-    <div className="jr-lobby-chat">
-      <ul ref={chatList}>
-        {room.messages.map((m) => <li key={m.id} className={m.system ? 'sys' : ''}>{m.system ? `· ${m.text}` : <><b style={{ color: room.players.find((p) => p.id === m.playerId)?.color ?? '#203c35' }}>{m.name}</b>{m.text}</>}</li>)}
-      </ul>
-      <form onSubmit={(e) => { e.preventDefault(); if (chat.trim()) { void act({ action: 'chat', text: chat }); setChat(''); } }}>
-        <input value={chat} maxLength={120} placeholder="메시지 입력…" onChange={(e) => setChat(e.target.value)} />
-        <button type="submit">전송</button>
-      </form>
-    </div>
-
-    {playing ? (
-      <>
-        <p className="jr-lobby-status">{isHost ? '게임이 진행 중입니다. 모두 끝났다면 대기실로 돌려주세요.' : '게임이 진행 중입니다. 방장이 대기실로 돌리면 다시 준비할 수 있어요.'}</p>
-        {isHost && <button className="jr-primary full" onClick={() => { sfx.click(); void act({ action: 'reset' }); }}>대기실로 돌아가기<GameIcon name="arrow" /></button>}
-      </>
-    ) : isHost ? (
-      <button className="jr-primary full" disabled={!allReady} onClick={() => { sfx.click(); void act({ action: 'start' }); }}>
-        {allReady ? (room.players.length > 1 ? '게임 시작' : '혼자 시작 (AI와 대결)') : '모두 준비하면 시작할 수 있어요'}<GameIcon name="arrow" />
-      </button>
-    ) : (
-      <button className={`jr-lobby-btn full ${me?.ready ? '' : 'ready'}`} style={{ width: '100%' }} onClick={() => { sfx.click(); void act({ action: 'update', ready: !me?.ready }); }}>
-        {me?.ready ? '준비 취소' : '준비 완료'}
-      </button>
-    )}
-    <div className="jr-lobby-actions" style={{ marginTop: 10 }}>
-      <button className="jr-lobby-btn ghost" onClick={leave}>방 나가기</button>
-    </div>
-    {error && <p className="jr-lobby-error">{error}</p>}
-  </div>;
+  );
 }
