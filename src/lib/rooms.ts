@@ -100,6 +100,7 @@ export async function joinRoom(code: string, name: string, characterId: string) 
   await prune(code);
   const [room] = await db.select().from(rooms).where(eq(rooms.code, code)).limit(1);
   if (!room) throw new RoomError("존재하지 않는 방 코드입니다.", 404);
+  if (room.status === "playing") throw new RoomError("이미 게임이 시작된 방입니다.", 409);
   const players = await db.select().from(roomPlayers).where(eq(roomPlayers.roomCode, code));
   if (players.length >= MAX_PLAYERS) throw new RoomError("방이 가득 찼습니다. (최대 4명)", 409);
   const color = PLAYER_COLORS.find((c) => !players.some((p) => p.color === c)) ?? PLAYER_COLORS[players.length % 4];
