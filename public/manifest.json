@@ -1,0 +1,39 @@
+{
+  "name": "고물 레이서즈 - Junk Racers",
+  "short_name": "고물 레이서즈",
+  "description": "15초 동안 고물을 모아 나만의 자동차를 만들고, 90초 페인트 배틀에서 가장 넓은 영역을 차지하세요.",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#18332e",
+  "theme_color": "#203e35",
+  "scope": "/",
+  "lang": "ko",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

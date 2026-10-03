@@ -437,9 +437,10 @@ h1, h2, h3, p { margin: 0; }
 .jr-build-meter.nerfed em { color: #ffb36b; }
 @media (orientation: landscape) and (max-height: 520px) { .jr-build-meter small { display: none; } }
 
-/* Multiplayer modal: give the Ice Tag style lobby enough room on desktop. */
+/* Multiplayer modal: give the lobby enough room on desktop and mobile. */
 .jr-modal.wide:has(.jr-lobby-tabs) { width: min(1040px, calc(100vw - 50px)); max-height: min(92dvh, 900px); }
-.jr-modal.wide:has(.jr-lobby-tabs) .jr-modal-body { padding: 0; }
+.jr-modal.wide:has(.jr-lobby-tabs) .jr-modal-body { padding: 20px 24px 28px; }
 @media (max-width: 720px) {
   .jr-modal.wide:has(.jr-lobby-tabs) { width: calc(100vw - 28px); max-height: calc(100dvh - 28px); border-radius: 22px; }
+  .jr-modal.wide:has(.jr-lobby-tabs) .jr-modal-body { padding: 16px 16px 20px; }
 }

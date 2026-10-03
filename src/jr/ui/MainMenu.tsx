@@ -19,7 +19,7 @@ const MENU: { id: string; icon: IconName; en: string; ko: string }[] = [
 function CharacterPicker({ onClose }: { onClose: () => void }) {
   const current = useGame((s) => s.characterId), select = useGame((s) => s.setCharacter);
   return <Modal title="작은 레이서, 큰 개성." label="CHOOSE YOUR RACER" onClose={onClose} wide>
-    <p className="jr-muted">얼음땡 동물마을의 친구들. 당신의 레이서는 누구인가요?</p>
+    <p className="jr-muted">고물 레이서즈의 개성 넘치는 친구들. 당신의 레이서는 누구인가요?</p>
     <div className="jr-character-grid">
       {CHARACTERS.map((c) => <button key={c.id} className={`jr-character-option ${current === c.id ? 'selected' : ''}`} aria-pressed={current === c.id} onClick={() => { sfx.click(); select(c.id); onClose(); }}>
         <span className="jr-character-face" style={{ background: c.belly }}><CharacterFace species={c.species} size={70} /></span>

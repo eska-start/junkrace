@@ -10,7 +10,7 @@ function fail(e: unknown) {
 }
 
 /** 방 정보 조회 (폴링) — playerId를 주면 접속 유지 처리 */
-export async function GET(req: Request, ctx: RouteContext<"/api/rooms/[code]">) {
+export async function GET(req: Request, ctx: { params: Promise<{ code: string }> }) {
   try {
     const { code } = await ctx.params;
     const playerId = new URL(req.url).searchParams.get("playerId");
@@ -21,7 +21,7 @@ export async function GET(req: Request, ctx: RouteContext<"/api/rooms/[code]">) 
 }
 
 /** 참가 / 준비 / 채팅 / 시작 / 나가기 등 */
-export async function POST(req: Request, ctx: RouteContext<"/api/rooms/[code]">) {
+export async function POST(req: Request, ctx: { params: Promise<{ code: string }> }) {
   try {
     const { code: raw } = await ctx.params;
     const code = normCode(raw);

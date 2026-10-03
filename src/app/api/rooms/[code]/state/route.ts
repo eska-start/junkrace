@@ -17,7 +17,7 @@ interface Row extends Record<string, unknown> {
  * 실시간 차량 상태 교환 (120ms 폴링).
  * 서버 인스턴스가 여러 개이거나 서버리스여도 동작하도록 DB(jsonb)에 저장한다.
  */
-export async function POST(req: Request, ctx: RouteContext<"/api/rooms/[code]/state">) {
+export async function POST(req: Request, ctx: { params: Promise<{ code: string }> }) {
   try {
     await ensureSchema();
     const { code: raw } = await ctx.params;

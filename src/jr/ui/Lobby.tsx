@@ -283,7 +283,7 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
         <span className="jr-invite-icon"><GameIcon name="people" size={25} /></span>
         <span className="jr-eyebrow">{peerRoom.state.code}</span>
         <h3>{peerRoom.error ? '연결에 실패했어요' : '방에 연결하는 중…'}</h3>
-        <p>{peerRoom.error || '얼음땡처럼 다른 기기끼리 직접 연결하고 있습니다.'}</p>
+        <p>{peerRoom.error || '다른 기기끼리 P2P로 직접 연결하고 있습니다.'}</p>
       </div>
     );
   }
@@ -326,7 +326,7 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
           <section className="rounded-3xl bg-white p-4 border border-[#26473518] shadow-[0_10px_30px_-12px_rgba(30,80,60,.35)]">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1.5">
               <span className="w-9 h-9 rounded-xl bg-[#e8f4ff] text-[#4489c8] grid place-items-center">
                 <GameIcon name="link" size={18} />
               </span>
@@ -370,20 +370,20 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
             <button
               disabled={!valid}
               onClick={() => join()}
-              className={`mt-3 w-full h-12 rounded-2xl font-game text-lg ${valid ? 'bg-gradient-to-r from-[#51b5f0] to-[#4d7ff0] text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}
+              className={`mt-3 w-full h-12 rounded-2xl font-game text-lg flex items-center justify-center ${valid ? 'bg-gradient-to-r from-[#51b5f0] to-[#4d7ff0] text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}
             >
               참가하기
             </button>
           </section>
 
           <section className="rounded-3xl bg-white p-4 border border-[#26473518] shadow-[0_10px_30px_-12px_rgba(30,80,60,.35)]">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-1.5">
               <span className="w-9 h-9 rounded-xl bg-[#fff0df] text-[#e58c49] grid place-items-center">
                 <GameIcon name="people" size={18} />
               </span>
               <div className="font-game text-lg">방 만들기</div>
             </div>
-            <div className="text-xs text-slate-400 mb-2">내가 호스트가 되어 친구에게 5자리 코드를 보내세요.</div>
+            <p className="text-xs text-slate-400 mb-3">내가 호스트가 되어 친구에게 5자리 코드를 보내세요.</p>
 
             <div className="grid grid-cols-2 gap-2">
               {(['ffa', 'team'] as GameMode[]).map((m) => (
@@ -402,15 +402,16 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
 
             <button
               onClick={create}
-              className="mt-3 w-full h-12 rounded-2xl bg-gradient-to-r from-[#f4a78e] to-[#f6c16b] text-[#293c32] font-game text-lg shadow-lg"
+              className="mt-3 w-full h-12 rounded-2xl bg-gradient-to-r from-[#f4a78e] to-[#f6c16b] text-[#293c32] font-game text-lg shadow-lg flex items-center justify-center gap-2"
             >
-              방 만들기<GameIcon name="arrow" size={17} />
+              <span>방 만들기</span>
+              <GameIcon name="arrow" size={17} />
             </button>
           </section>
         </div>
 
         <div className="rounded-2xl bg-[#26473508] px-3 py-2 mt-3 text-[11px] text-slate-400 text-center">
-          얼음땡처럼 다른 기기끼리 직접 연결됩니다. 최대 {MAX_PLAYERS}명까지 함께할 수 있어요.
+          다른 기기끼리 P2P로 직접 연결됩니다. 최대 {MAX_PLAYERS}명까지 함께할 수 있어요.
         </div>
         <p className="jr-footnote text-center">초대 링크를 받은 경우 코드를 입력하지 않아도 바로 참가합니다.</p>
       </div>
@@ -456,7 +457,7 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
     <div>
       <section className="rounded-3xl p-4 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#1e293b 0%,#1e3a8a 100%)' }}>
         <div className="absolute -right-8 -top-10 w-40 h-40 rounded-full bg-sky-400/20 blur-xl" />
-        <div className="relative flex items-center justify-between gap-3">
+        <div className="relative flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
           <div>
             <div className="text-[10px] font-semibold text-white/60 tracking-[.22em]">ROOM CODE</div>
             <div className="text-[34px] font-extrabold tracking-[.25em] leading-tight">{room.code}</div>
@@ -466,13 +467,11 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
             <ShareInviteButton code={room.code} link={link} />
           </div>
         </div>
-        <button
-          onClick={() => void navigator.clipboard?.writeText(link)}
-          className="relative mt-2 flex items-center gap-1.5 text-[10px] text-white/60 truncate max-w-full"
-        >
-          <GameIcon name="link" size={12} />
-          <span className="truncate">{link}</span>
-        </button>
+        <div className="relative mt-2.5 flex items-center gap-2 bg-white/10 rounded-xl px-2.5 py-1.5 min-w-0">
+          <GameIcon name="link" size={13} />
+          <span className="text-[11px] text-white/70 truncate flex-1 select-all">{link}</span>
+          <CopyButton value={link} label="링크 복사" icon="link" />
+        </div>
       </section>
 
       <section className="rounded-3xl bg-white p-3 shadow-sm mt-3">
@@ -520,19 +519,25 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
             return (
               <div
                 key={p.id}
-                className={`relative rounded-2xl bg-white h-[84px] flex items-center gap-2 px-3 ${p.id === myId ? 'ring-2 ring-[#50ccb6]' : ''}`}
+                className={`relative rounded-2xl bg-white h-[84px] flex items-center gap-2.5 px-3 ${p.id === myId ? 'ring-2 ring-[#50ccb6]' : ''}`}
               >
                 <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full" style={{ background: room.mode === 'team' ? TEAM_COLORS[p.team] : p.color }} />
                 <CharacterFace species={ch.species} size={38} />
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 pr-2">
                   <strong className="block text-[12px] truncate">{p.name}{p.id === myId ? ' (나)' : ''}</strong>
-                  <small className="block text-[10px] text-slate-400">{ch.name}</small>
+                  <small className="block text-[10px] text-slate-400 truncate">{ch.name}</small>
                   <span className={`inline-flex mt-1 text-[9px] font-extrabold px-2 py-0.5 rounded-full ${p.isHost ? 'bg-amber-100 text-amber-700' : p.ready ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
                     {p.isHost ? '방장' : p.ready ? '준비 완료' : '대기 중'}
                   </span>
                 </div>
                 {isHost && !p.isHost && (
-                  <button className="absolute left-2 bottom-2 text-[9px] text-slate-400 hover:text-red-500" onClick={() => act('kick', p.id)}>내보내기</button>
+                  <button
+                    type="button"
+                    className="absolute right-2.5 bottom-2 text-[10px] text-slate-400 hover:text-red-500 font-medium"
+                    onClick={() => act('kick', p.id)}
+                  >
+                    내보내기
+                  </button>
                 )}
               </div>
             );
@@ -560,7 +565,7 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
         </form>
       </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end mt-3">
+      <section className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2.5 items-end mt-3">
         <div className="grid grid-cols-2 gap-2">
           <div className="jr-lobby-field mb-0">
             <label>내 닉네임</label>
@@ -591,10 +596,10 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full md:w-auto">
           {!isHost && (
             <button
-              className={`jr-lobby-btn min-w-[150px] ${me?.ready ? '' : 'ready'}`}
+              className={`jr-lobby-btn w-full md:min-w-[150px] flex items-center justify-center ${me?.ready ? '' : 'ready'}`}
               onClick={() => { sfx.click(); act('ready', !me?.ready); }}
             >
               {me?.ready ? '준비 취소' : '준비 완료'}
@@ -603,18 +608,19 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
 
           {isHost && !playing && (
             <button
-              className="jr-primary min-w-[180px]"
+              className="jr-primary w-full md:min-w-[180px] flex items-center justify-center gap-2"
               disabled={!peerRoom.allReady}
               onClick={() => { sfx.click(); act('start'); }}
             >
-              {peerRoom.allReady ? (guests.length ? '게임 시작' : '혼자 시작 (AI와 대결)') : '친구가 준비할 때까지 대기'}
+              <span>{peerRoom.allReady ? (guests.length ? '게임 시작' : '혼자 시작 (AI와 대결)') : '친구가 준비할 때까지 대기'}</span>
               <GameIcon name="arrow" size={17} />
             </button>
           )}
 
           {isHost && playing && (
-            <button className="jr-primary min-w-[180px]" onClick={() => { sfx.click(); act('return'); }}>
-              대기실로 돌아가기<GameIcon name="arrow" size={17} />
+            <button className="jr-primary w-full md:min-w-[180px] flex items-center justify-center gap-2" onClick={() => { sfx.click(); act('return'); }}>
+              <span>대기실로 돌아가기</span>
+              <GameIcon name="arrow" size={17} />
             </button>
           )}
         </div>
