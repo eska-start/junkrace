@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "고물 레이서즈 - Junk Racers",
   description: "15초 동안 고물을 모아 나만의 자동차를 만들고, 90초 페인트 배틀에서 가장 넓은 영역을 차지하세요.",
   applicationName: "고물레이서즈",
-  manifest: "/manifest.webmanifest?v=3",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: [
       { url: "/favicon.svg?v=3", type: "image/svg+xml" },
@@ -38,7 +38,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ko">
       <head>
-        <link rel="manifest" href="/manifest.webmanifest?v=3" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
