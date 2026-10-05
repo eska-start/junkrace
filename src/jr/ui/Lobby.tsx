@@ -345,7 +345,13 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
                 {Array.from({ length: 5 }, (_, i) => (
                   <div
                     key={i}
-                    className={`h-14 rounded-2xl grid place-items-center text-2xl font-extrabold tracking-widest ${joinCode[i] ? 'bg-slate-900 text-white' : i === joinCode.length ? 'bg-[#eef8ff] ring-2 ring-[#50a8e8] text-slate-300' : 'bg-slate-100 text-slate-300'}`}
+                    className={`h-14 rounded-2xl grid place-items-center text-2xl font-extrabold tracking-widest transition-all ${
+                      joinCode[i]
+                        ? 'bg-slate-900 text-white'
+                        : i === joinCode.length
+                        ? 'bg-[#eef8ff] ring-2 ring-inset ring-[#50a8e8] text-slate-300'
+                        : 'bg-slate-100 text-slate-300'
+                    }`}
                   >
                     {joinCode[i] ?? ''}
                   </div>
@@ -519,7 +525,7 @@ export function OnlineLobby({ onStarted }: { onStarted: () => void }) {
             return (
               <div
                 key={p.id}
-                className={`relative rounded-2xl bg-white h-[84px] flex items-center gap-2.5 px-3 ${p.id === myId ? 'ring-2 ring-[#50ccb6]' : ''}`}
+                className={`relative rounded-2xl bg-white h-[84px] flex items-center gap-2.5 px-3 ${p.id === myId ? 'ring-2 ring-inset ring-[#50ccb6]' : ''}`}
               >
                 <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full" style={{ background: room.mode === 'team' ? TEAM_COLORS[p.team] : p.color }} />
                 <CharacterFace species={ch.species} size={38} />
