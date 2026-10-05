@@ -134,7 +134,7 @@ export function computeSpec(build: CarBuild, items: Record<number, string>, char
   const paintWidth = (brush ? (brush.paintWidth ?? 1) * (1 + brushLvl * 0.12) : DEFAULT_PAINT_WIDTH) * done.nerf;
   const brushGrade = brush && build.slots.brush !== undefined ? partGrade(build, items, build.slots.brush) : null;
   const g = gunOf(build, items);
-  const gunExtra = { completeness: done.filled, completenessMax: COMPLETENESS_MAX, paintNerf: done.nerf, gun: g.gun, gunName: g.name, gunGrade: g.grade, partHp: 22 + Math.max(0, stats.weight) * 2.5 };
+  const gunExtra = { completeness: done.filled, completenessMax: COMPLETENESS_MAX, paintNerf: done.nerf, gun: g.gun, gunName: g.name, gunGrade: g.grade, partHp: 26 + Math.max(0, stats.weight) * 3.0 };
   // 바퀴가 하나라도 있으면 차체가 없어도(뼈대만 있어도) 주행 가능
   const onFoot = wheelCount === 0;
 

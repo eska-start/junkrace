@@ -10,6 +10,7 @@ import { BuildScreen, CollectHUD, BattleHUD, ResultScreen, SelectScreen } from '
 import { GameIcon } from './ui/GameIcon';
 import { GameBoundary, Unsupported3D } from './ui/GameBoundary';
 import { useOnlineHeartbeat } from './ui/Lobby';
+import { InstallHeaderButton } from './ui/InstallPrompt';
 
 function GameCanvas({ children, bg, fog }: { children: React.ReactNode; bg: string; fog: [number, number] }) {
   return (
@@ -98,7 +99,12 @@ export default function App() {
   return (
     <GameBoundary>
       {content}
-      {phase === 'select' && <MuteButton />}
+      {phase === 'select' && (
+        <div className="jr-top-actions">
+          <InstallHeaderButton />
+          <MuteButton />
+        </div>
+      )}
     </GameBoundary>
   );
 }

@@ -184,7 +184,10 @@ export function SelectScreen() {
     <section className="jr-showroom" aria-label="캐릭터와 고물 자동차 쇼룸"><MenuShowroom characterId={characterId} build={garage.build} items={garage.items} color={color} /></section>
     <aside className="jr-menu-sidebar">
       <header className="jr-menu-brand">
-        <span className="jr-brand-en"><i />JUNK RACERS</span>
+        <span className="jr-brand-en">
+          <img src="/icons/favicon-32.png" width={18} height={18} alt="" style={{ borderRadius: 4, border: '1px solid #ffb70388', verticalAlign: 'middle' }} />
+          JUNK RACERS
+        </span>
         <h1><span>고물</span><span className="jr-logo-last">레이서즈<span className="jr-logo-dot">.</span></span></h1>
         <p>작게 모으고, 크게 물들여라.</p>
       </header>

@@ -52,6 +52,7 @@ interface Actor {
   /** 페인트 소유자 번호 — 개인전은 자기 번호, 팀전은 팀 번호 */
   own: number; team?: number;
   dmg: number; fireCd: number; flash: number; netId?: string; netBuildKey: string; aimCd: number;
+  wallHitCd: number;
 }
 interface Bullet { active: boolean; x: number; y: number; z: number; vx: number; vz: number; life: number; owner: number; damage: number; splash: number; color: string }
 interface GroundPart { uid: number; itemId: string; level: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; spin: number; cd: number; from: number; age: number }
@@ -256,7 +257,7 @@ export function BattleWorld() {
       const team = teamMode ? racer.team ?? (i < 2 ? 0 : 1) : undefined;
       return {
         own: team ?? i, team,
-        dmg: 0, fireCd: 0, flash: 0, aimCd: Math.random(), netBuildKey: '',
+        dmg: 0, fireCd: 0, flash: 0, aimCd: Math.random(), netBuildKey: '', wallHitCd: 0,
         netId: racer.id.startsWith('net-') ? racer.id.slice(4) : undefined,
         racer, color: colors[i], st: newVehicleState(start.x, start.z, start.heading),
         spec, items: [...(racer.loadout?.items ?? ['oil'])],
@@ -384,7 +385,7 @@ export function BattleWorld() {
   function damage(index: number, amount: number, from: number) {
     const a = sim.actors[index];
     if (battleHUD.phase !== 'play') return;
-    if (isAlly(index, from)) return; // 아군 사격/충돌은 피해 없음
+    if (from >= 0 && isAlly(index, from)) return; // 아군 사격/충돌은 피해 없음 (환경 피해 from=-1 제외)
     if (a.netId && freshRemote(a.netId)) return; // 원격 참가자의 차량 피해는 본인 기기에서 계산
     if (a.st.shield > 0) { a.st.shield = Math.max(0, a.st.shield - amount * 0.15); return; }
     a.dmg += amount; a.flash = 0.25;
@@ -601,11 +602,12 @@ export function BattleWorld() {
         a.fireCd -= dt;
         if (i === 0) sim.localFiring = Boolean(ctrl.fire);
         if (ctrl.fire && a.fireCd <= 0) fire(i);
-        a.padCd -= dt; a.jumpCd -= dt; a.wide = Math.max(0, a.wide - dt);
+        a.padCd -= dt; a.jumpCd -= dt; a.wide = Math.max(0, a.wide - dt); a.wallHitCd = Math.max(0, a.wallHitCd - dt);
         const ground = arenaHeight(st.x, st.z), owner = sim.paint.ownerAt(st.x, st.z);
         const friction = owner < 0 ? 1 : owner === a.own ? 1.03 : 0.94;
         const jump = JUMP_PADS.some((p) => Math.hypot(p.x - st.x, p.z - st.z) < 1.5) && a.jumpCd <= 0;
         const boostBefore = st.boostTime;
+        const speedBefore = st.speed;
         stepVehicle(st, a.spec, ctrl, dt, { friction, ground, jumpImpulse: jump ? 9.5 : undefined }, ARENA_OBSTACLES);
         if (!st.airborne) {
           const fx = Math.sin(st.heading), fz = Math.cos(st.heading);
@@ -615,11 +617,32 @@ export function BattleWorld() {
           st.roll += (roll - st.roll) * Math.min(1, dt * 4);
         }
         if (st.boostTime > boostBefore) { a.boosts++; if (i === battleHUD.focus) sfx.boost(); }
-        if (st.y < 1.3 && pushBarrier(st, a.spec.onFoot ? 0.65 : 1.05)) { st.speed *= 0.7; st.hit = 0.22; }
+        const hitBarrier = st.y < 1.3 && pushBarrier(st, a.spec.onFoot ? 0.65 : 1.05);
         const unclampedX = st.x, unclampedZ = st.z;
         clampArena(st);
-        if (Math.hypot(st.x - unclampedX, st.z - unclampedZ) > 0.01) {
-          st.speed *= 0.55; st.hit = Math.max(st.hit, 0.18); damage(i, 5, i);
+        const hitOuterWall = Math.hypot(st.x - unclampedX, st.z - unclampedZ) > 0.01;
+        if (hitBarrier || hitOuterWall) {
+          const impactSpeed = Math.abs(speedBefore);
+          if (a.wallHitCd <= 0) {
+            // 속도가 빠를수록 피해가 급격히 커지고, 천천히 부딪히면 여러 번 버틸 수 있는 내구도
+            if (impactSpeed >= 3.2) {
+              const impact = impactSpeed - 3.2;
+              const dmg = Math.min(55, Math.pow(impact / 2.6, 1.35) * 3.5);
+              damage(i, dmg, -1);
+              emit(st.x, st.y + 0.6, st.z, '#ffffff', Math.min(18, Math.max(4, Math.floor(dmg * 0.6))), 3.5);
+              if (i === battleHUD.focus) {
+                if (dmg >= 12) {
+                  sfx.bump();
+                  sim.shake = Math.min(0.7, 0.2 + dmg * 0.02);
+                } else if (dmg >= 2.5) {
+                  sfx.clank();
+                }
+              }
+            }
+            a.wallHitCd = 0.5; // 0.5초 쿨다운으로 벽에 닿아 있는 동안 다단히트 폭타 방지
+          }
+          st.speed *= hitOuterWall ? 0.45 : 0.65;
+          st.hit = Math.max(st.hit, 0.25);
         }
         // 점프대로 떠오른 경우에만 긴 쿨다운 — 수동 점프는 자체 쿨다운(0.55초)을 유지한다
         if (st.airborne && !a.wasAir && a.jumpCd <= 0) { a.jumpCd = 1.3; if (i === battleHUD.focus) sfx.jump(); }
@@ -743,14 +766,25 @@ export function BattleWorld() {
         if (d < 1.9 && d > 0.0001 && Math.abs(a.y - b.y) < 1.1) {
           const push = (1.9 - d) / 2;
           a.x -= dx / d * push; a.z -= dz / d * push; b.x += dx / d * push; b.z += dz / d * push;
-          // 차량끼리 부딪히면 데미지 입기 — 저속 접촉에도 데미지가 들어가고 고속일수록 강하게 부숴짐
+          // 차량끼리 부딪히는 경우: 속도가 빠를수록 강하게 부숴지고, 저속은 여러 번 버틸 수 있는 내구도
           const relSpeed = Math.abs(a.speed) + Math.abs(b.speed);
-          if (a.hit <= 0 && b.hit <= 0 && relSpeed > 1.8) {
-            const dmgBase = 9 + relSpeed * 0.95;
-            damage(i, dmgBase, j); damage(j, dmgBase, i);
-            emit((a.x + b.x) / 2, (a.y + b.y) / 2 + 0.6, (a.z + b.z) / 2, '#fff', 10, 4);
-            a.hit = b.hit = 0.32; a.speed *= 0.72; b.speed *= 0.72;
-            if (i === battleHUD.focus || j === battleHUD.focus) { sfx.bump(); sim.shake = Math.min(0.7, 0.25 + relSpeed * 0.03); }
+          if (a.hit <= 0 && b.hit <= 0) {
+            if (relSpeed >= 3.5) {
+              const relExcess = relSpeed - 3.5;
+              const dmgBase = Math.min(55, Math.pow(relExcess / 2.8, 1.35) * 3.2);
+              damage(i, dmgBase, j); damage(j, dmgBase, i);
+              emit((a.x + b.x) / 2, (a.y + b.y) / 2 + 0.6, (a.z + b.z) / 2, '#fff', Math.min(22, Math.max(5, Math.floor(dmgBase * 0.7))), 4);
+              if (i === battleHUD.focus || j === battleHUD.focus) {
+                if (dmgBase >= 12) {
+                  sfx.bump();
+                  sim.shake = Math.min(0.7, 0.2 + relSpeed * 0.025);
+                } else {
+                  sfx.clank();
+                }
+              }
+            }
+            a.hit = b.hit = 0.45; // 충돌 무적/쿨다운 0.45초
+            a.speed *= 0.72; b.speed *= 0.72;
           }
         }
       }

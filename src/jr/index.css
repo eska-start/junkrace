@@ -82,7 +82,32 @@ h1, h2, h3, p { margin: 0; }
 .jr-change-text { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 9px; color: #adbf9e; white-space: nowrap; }
 .jr-menu-bottom { position: absolute; bottom: 15px; left: clamp(26px, 4vw, 66px); right: 26px; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 8px; color: #86a18a; }
 .jr-menu-bottom span:first-child { letter-spacing: .08em; display: flex; align-items: center; gap: 6px; }
-.jr-menu-bottom i { width: 4px; height: 4px; background: #9ac79c; border-radius: 50%; }
+.jr-top-actions { position: fixed; right: 22px; top: 20px; z-index: 25; display: flex; align-items: center; gap: 10px; }
+.jr-top-actions .mute-btn { position: static; top: auto; right: auto; }
+.install-btn { height: 40px; padding: 0 15px 0 10px; display: flex; align-items: center; gap: 8px; background: #203d31b3; border: 1px solid #ffb70366; border-radius: 9999px; color: #f8edd2; font-family: var(--font-game), sans-serif; font-size: 14px; letter-spacing: .02em; cursor: pointer; backdrop-filter: blur(8px); box-shadow: 0 6px 16px rgba(0, 0, 0, .28), 0 0 12px rgba(255, 183, 3, .15); transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease; user-select: none; }
+.install-btn:hover { background: #284c3e; border-color: #ffb703; color: #ffb703; transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0, 0, 0, .35), 0 0 16px rgba(255, 183, 3, .3); }
+.install-btn:active { transform: translateY(1px); }
+.install-btn-icon-wrap { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; overflow: hidden; background: #112820; border: 1px solid #ffb70388; flex-shrink: 0; }
+.install-btn-mini-icon { width: 100%; height: 100%; object-fit: cover; display: block; }
+.install-btn-text { font-weight: 400; white-space: nowrap; }
+
+.jr-app-preview-badge { display: flex; align-items: center; gap: 16px; background: linear-gradient(135deg, #244638 0%, #153229 100%); border: 1px solid #ffffff15; border-radius: 18px; padding: 14px 16px; margin-bottom: 16px; box-shadow: 0 8px 24px rgba(16, 52, 39, .22); }
+.jr-app-preview-img { border-radius: 14px; border: 2px solid #ffb703; box-shadow: 0 6px 14px rgba(0, 0, 0, .35); flex-shrink: 0; }
+.jr-app-preview-title { font-family: var(--font-game); font-size: 19px; color: #fff9ec; display: block; letter-spacing: -.01em; }
+.jr-app-preview-subtitle { font-size: 11px; color: #a8c4ab; margin-top: 4px; display: block; }
+.jr-ios-steps { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 18px; }
+.jr-ios-step { display: flex; align-items: flex-start; gap: 12px; background: #ffffff; border: 1px solid #203c3518; border-radius: 14px; padding: 12px 14px; box-shadow: 0 2px 8px rgba(32, 60, 53, .04); }
+.jr-step-num { width: 24px; height: 24px; border-radius: 50%; background: #f4a78e; color: #203c35; font-weight: 800; font-size: 13px; display: grid; place-items: center; flex-shrink: 0; }
+.jr-ios-step strong { font-size: 13px; color: var(--ink); display: block; margin-bottom: 3px; }
+.jr-ios-step p { font-size: 12px; color: #556c60; line-height: 1.5; margin: 0; }
+.jr-desktop-install-box { display: flex; align-items: center; gap: 14px; background: #ffffff; border: 1px solid #203c3518; border-radius: 16px; padding: 14px 16px; margin: 14px 0 18px; box-shadow: 0 2px 8px rgba(32, 60, 53, .04); }
+.jr-desktop-install-icon { width: 48px; height: 48px; border-radius: 13px; background: #203c3512; border: 1px solid #203c3525; display: grid; place-items: center; color: #203c35; flex-shrink: 0; }
+.jr-desktop-install-box strong { font-size: 14px; color: var(--ink); display: block; margin-bottom: 3px; }
+.jr-desktop-install-box p { font-size: 12px; color: #556c60; line-height: 1.5; margin: 0; }
+
+.jr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 20px; border: 1px solid #203c3526; background: #203c350d; border-radius: 14px; font-family: var(--font-game); font-size: 17px; color: var(--ink); }
+.jr-btn:hover { background: #203c3518; }
+
 .mute-btn { position: fixed; right: 22px; top: 20px; z-index: 12; width: 40px; height: 40px; display: grid; place-items: center; color: #e9f3df; background: #203d3166; border: 1px solid #e0eedb33; border-radius: 50%; backdrop-filter: blur(6px); }
 
 /* Game dialogs are interactive trays, with keyboard and touch support. */
@@ -237,7 +262,7 @@ h1, h2, h3, p { margin: 0; }
   .jr-main-menu { grid-template-columns: 1fr; grid-template-rows: 47% 53%; }
   .jr-showroom { grid-column: 1; grid-row: 1; }
   .jr-menu-sidebar { grid-column: 1; grid-row: 2; padding: 16px 24px 31px; gap: 10px; overflow-y: auto; justify-content: flex-start; }
-  .jr-menu-sidebar::before { display: none; }.jr-menu-brand { flex-shrink: 0; }.jr-brand-en { font-size: 7px; margin-bottom: 6px; }.jr-menu-brand h1 { display: flex; gap: 8px; font-size: 35px; transform: rotate(-2deg); }.jr-menu-brand p { font-size: 10px; margin-top: 8px; }.jr-main-nav { gap: 3px; }.jr-menu-action { padding: 7px 12px; min-height: 41px; border-radius: 10px; }.jr-menu-action strong { font-size: 16px; }.jr-menu-action small { font-size: 6px; }.jr-menu-action > span:nth-child(2) { flex-direction: row; align-items: center; gap: 9px; }.jr-menu-action.primary { min-height: 48px; margin-bottom: 3px; }.jr-menu-action.primary strong { font-size: 18px; }.jr-menu-action.primary > span:nth-child(2) { flex-direction: row; }.jr-menu-icon { width: 29px; }.jr-menu-icon svg { width: 19px; height: 19px; }.jr-current-racer { padding-top: 9px; gap: 8px; }.jr-current-avatar { width: 35px; height: 35px; }.jr-current-avatar svg { width: 32px; height: 32px; }.jr-current-racer strong { font-size: 14px; }.jr-current-racer small { font-size: 6px; }.jr-menu-bottom { left: 24px; bottom: 11px; right: 24px; font-size: 7px; }.jr-change-text { font-size: 8px; }.mute-btn { top: 14px; right: 14px; width: 34px; height: 34px; }
+  .jr-menu-sidebar::before { display: none; }.jr-menu-brand { flex-shrink: 0; }.jr-brand-en { font-size: 7px; margin-bottom: 6px; }.jr-menu-brand h1 { display: flex; gap: 8px; font-size: 35px; transform: rotate(-2deg); }.jr-menu-brand p { font-size: 10px; margin-top: 8px; }.jr-main-nav { gap: 3px; }.jr-menu-action { padding: 7px 12px; min-height: 41px; border-radius: 10px; }.jr-menu-action strong { font-size: 16px; }.jr-menu-action small { font-size: 6px; }.jr-menu-action > span:nth-child(2) { flex-direction: row; align-items: center; gap: 9px; }.jr-menu-action.primary { min-height: 48px; margin-bottom: 3px; }.jr-menu-action.primary strong { font-size: 18px; }.jr-menu-action.primary > span:nth-child(2) { flex-direction: row; }.jr-menu-icon { width: 29px; }.jr-menu-icon svg { width: 19px; height: 19px; }.jr-current-racer { padding-top: 9px; gap: 8px; }.jr-current-avatar { width: 35px; height: 35px; }.jr-current-avatar svg { width: 32px; height: 32px; }.jr-current-racer strong { font-size: 14px; }.jr-current-racer small { font-size: 6px; }.jr-menu-bottom { left: 24px; bottom: 11px; right: 24px; font-size: 7px; }.jr-change-text { font-size: 8px; }.jr-top-actions { top: 12px; right: 12px; gap: 6px; }.install-btn { height: 34px; padding: 0 11px 0 8px; font-size: 12px; }.install-btn-icon-wrap { width: 20px; height: 20px; }.mute-btn { width: 34px; height: 34px; }
   .jr-build-screen { grid-template-columns: 1fr; grid-template-rows: 45% 55%; }.jr-build-view-label { left: 17px; top: 17px; }.jr-build-view-label h2 { font-size: 19px; }.jr-build-specs { left: 17px; right: 17px; bottom: 15px; padding: 10px 12px; }.jr-build-specs > span { font-size: 9px; }.jr-build-specs > div { margin-top: 5px; gap: 12px; }.jr-build-specs label { font-size: 8px; }.jr-build-panel { padding: 17px; }.jr-build-panel header h1 { font-size: 26px; margin: 5px 0; }.jr-build-panel .jr-muted { font-size: 10px; margin-bottom: 8px; }.jr-build-panel .jr-eyebrow { font-size: 7px; }.jr-tabs { gap: 4px; margin: 7px 0 13px; }.jr-tabs button { font-size: 9px; padding: 5px 8px; }.jr-build-panel footer { margin-top: 10px; }.jr-build-panel footer p { display: none; }.jr-build-panel .jr-primary { padding: 12px; font-size: 17px; }.jr-build-options > button { padding: 9px; }.jr-part-color { width: 36px; height: 36px; }.jr-wheel-mounts { margin-bottom: 10px; }.jr-wheel-mounts button { padding: 8px 2px; gap: 4px; }
 }
 @media (max-width: 720px) {
