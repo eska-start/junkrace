@@ -1,5 +1,5 @@
 // 고물 레이서즈 Service Worker
-const CACHE_NAME = 'junk-racers-v2';
+const CACHE_NAME = 'junk-racers-v4';
 
 const PRECACHE_ASSETS = [
   '/',
