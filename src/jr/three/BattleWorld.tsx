@@ -858,19 +858,12 @@ export function BattleWorld() {
     battleHUD.statSpeed = focused.spec.maxSpeed; battleHUD.statAccel = focused.spec.accel; battleHUD.statGrip = focused.spec.grip;
     sfx.engine(playing ? Math.min(1, Math.abs(p.speed) / 25) : 0, p.boostTime > 0 || p.itemBoost > 0);
     const fx = Math.sin(p.heading), fz = Math.cos(p.heading), portrait = size.width / size.height < 0.8;
-    const speedRatio = Math.min(1.4, Math.abs(p.speed) / Math.max(1, focused.spec.maxSpeed));
-    const turboPull = (p.boostTime > 0 || p.itemBoost > 0) ? 2.4 : 0;
-    const driftPull = Math.abs(p.driftDir) * 0.7;
-    const back = (portrait ? 17 : 13.5) + speedRatio * 1.8 + turboPull + driftPull;
-    const up = (portrait ? 15 : 11.5) + speedRatio * 0.5;
-    const k = 1 - Math.exp(-dt * 4.5);
+    const back = portrait ? 17 : 13.5, up = portrait ? 15 : 11.5;
+    const k = 1 - Math.exp(-dt * 4);
     camera.position.lerp(new THREE.Vector3(p.x - fx * back, up + p.y * 0.7, p.z - fz * back), k);
     sim.shake = Math.max(0, sim.shake - dt * 2);
     const sh = sim.shake * 0.35;
-    const lookAhead = 2.0 + speedRatio * 2.2;
-    camera.lookAt(p.x + fx * lookAhead + (Math.random() - 0.5) * sh, 0.8 + p.y, p.z + fz * lookAhead);
-    // 마리오카트 스타일 다이내믹 뱅크 롤 (코너링 & 드리프트 시 카메라 틸트)
-    camera.rotation.z = (-p.steer * 0.035 - p.driftDir * 0.04) * speedRatio;
+    camera.lookAt(p.x + fx * 1.8 + (Math.random() - 0.5) * sh, 0.8 + p.y, p.z + fz * 1.8);
     lightTarget.current.x = p.x; lightTarget.current.z = p.z;
   });
   return <group>

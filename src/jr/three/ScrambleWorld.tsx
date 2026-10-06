@@ -491,57 +491,90 @@ export function ScrambleWorld() {
   const botControl = (rn: Runner, idx: number, dt: number) => {
     rn.retarget -= dt;
     if (rn.retarget <= 0) {
-      rn.retarget = 0.3 + Math.random() * 0.25;
-      // 더 많이 가진 상대를 노려 부딪힌다
-      rn.ramTarget = -1;
-      let bestScore = -1;
+      rn.retarget = 0.35 + Math.random() * 0.25;
       const myCount = rn.stack.entries.length;
-      for (let j = 0; j < sim.runners.length; j++) {
-        if (j === idx) continue;
-        const o = sim.runners[j];
-        const d = Math.hypot(o.x - rn.x, o.z - rn.z);
-        const gain = o.stack.entries.length - myCount;
-        if (o.stack.entries.length >= 3 && gain >= 0 && d < 11) {
-          const s = (3 + gain) * rn.aggression / (d + 2);
-          if (s > bestScore) {
-            bestScore = s;
-            rn.ramTarget = j;
-          }
+
+      // 1. 바닥에 있는 최적의 부품 탐색 (부품 수집 최우선)
+      let bestPartScore = -1;
+      let targetPartX = rn.x;
+      let targetPartZ = rn.z;
+      const hasWheel = rn.stack.entries.filter((e) => ITEMS[e.itemId]?.cat === 'wheel').length >= 2;
+      const hasBrush = rn.stack.entries.some((e) => ITEMS[e.itemId]?.cat === 'brush');
+
+      for (const p of sim.parts) {
+        if (p.cd > 0) continue;
+        const d = Math.hypot(p.x - rn.x, p.z - rn.z);
+        const def = ITEMS[p.def.itemId];
+        if (!def) continue;
+
+        // 등급 가중치 (고등급 부품 우선 획득)
+        const gradeW = def.grade === 'legend' ? 3.4 : def.grade === 'epic' ? 2.3 : def.grade === 'rare' ? 1.5 : 1.0;
+        // 크기/티어 가중치
+        const tierW = p.def.tier === 'large' ? 3.0 : p.def.tier === 'mid' ? 2.0 : 1.2;
+        // 갓 떨어진 부품 보너스 (충돌 직후 쏟아진 전리품 줍기)
+        const hotBonus = p.hot > 0 ? 2.4 : 1.0;
+        // 바퀴/붓 등 핵심 부품 필요 시 추가 가중치
+        const needWheelBonus = !hasWheel && def.cat === 'wheel' ? 1.8 : 1.0;
+        const needBrushBonus = !hasBrush && def.cat === 'brush' ? 2.0 : 1.0;
+
+        const w = tierW * gradeW * hotBonus * needWheelBonus * needBrushBonus * rn.aggression;
+        const score = w / (d + 1.2);
+        if (score > bestPartScore) {
+          bestPartScore = score;
+          targetPartX = p.x;
+          targetPartZ = p.z;
         }
       }
-      if (rn.ramTarget < 0) {
-        let best = -1;
-        let tx = rn.x, tz = rn.z;
-        for (const p of sim.parts) {
-          if (p.cd > 0) continue;
-          const d = Math.hypot(p.x - rn.x, p.z - rn.z);
-          const def = ITEMS[p.def.itemId];
-          const gradeW = def?.grade === 'legend' ? 3 : def?.grade === 'epic' ? 2 : def?.grade === 'rare' ? 1.4 : 1;
-          // 붓은 페인트 배틀의 핵심이라 봇이 더 적극적으로 노린다 (이미 붓이 있으면 덜)
-          const hasBrush = rn.stack.entries.some((e) => ITEMS[e.itemId]?.cat === 'brush');
-          const brushW = def?.cat === 'brush' ? (hasBrush ? 1.1 : 2.2) : 1;
-          const w = (p.def.tier === 'large' ? 5 : p.def.tier === 'mid' ? 2.4 : 1.2) * rn.aggression * gradeW * brushW;
-          const s = w / (d + 2.2);
-          if (s > best) {
-            best = s;
-            tx = p.x;
-            tz = p.z;
+
+      rn.tx = targetPartX;
+      rn.tz = targetPartZ;
+
+      // 2. 적절한 타이밍에만 상대 공격/부딪히기 고려
+      // - 내 부품이 너무 적을 때는 싸우기보다 무조건 줍는 데 집중
+      // - 상대가 많은 부품(4개 이상)을 들고 있고 가까운 거리(4.8m 이내)에 있을 때만 기회 포착
+      rn.ramTarget = -1;
+      if (myCount >= 3) {
+        let bestRamScore = -1;
+        let chosenRam = -1;
+        for (let j = 0; j < sim.runners.length; j++) {
+          if (j === idx) continue;
+          const o = sim.runners[j];
+          if (o.hitCd > 0) continue;
+          const d = Math.hypot(o.x - rn.x, o.z - rn.z);
+          const targetCount = o.stack.entries.length;
+          // 상대가 부품을 충분히 들고 있고 근접한 경우
+          if (targetCount >= 4 && d < 4.8) {
+            const gain = targetCount - myCount;
+            // 상대가 스턴 중이거나 내가 돌진 준비가 된 경우 좋은 공격 찬스
+            const readyDashBonus = rn.dashCd <= 0 ? 1.8 : 1.0;
+            const stunBonus = o.stun > 0 ? 2.5 : 1.0;
+            const urgencyBonus = scramble.remaining < 5 && targetCount >= 6 ? 1.6 : 1.0;
+            const ramScore = (2.5 + Math.max(0, gain) * 1.2) * readyDashBonus * stunBonus * urgencyBonus * (rn.aggression * 0.6) / (d + 1.2);
+            // 근처의 바닥 부품 줍기 점수보다 공격 기회가 확실히 더 좋을 때만 타겟팅
+            if (ramScore > bestRamScore && ramScore > bestPartScore * 1.5) {
+              bestRamScore = ramScore;
+              chosenRam = j;
+            }
           }
         }
-        rn.tx = tx;
-        rn.tz = tz;
+        rn.ramTarget = chosenRam;
       }
     }
+
     let tx = rn.tx;
     let tz = rn.tz;
     if (rn.ramTarget >= 0) {
       const o = sim.runners[rn.ramTarget];
-      tx = o.x;
-      tz = o.z;
+      if (o) {
+        tx = o.x;
+        tz = o.z;
+      }
     }
+
     const dx = tx - rn.x;
     const dz = tz - rn.z;
     const d = Math.hypot(dx, dz) || 1;
+
     // 막힘 처리
     if (Math.abs(rn.speed) < 1.2) {
       rn.stuck += dt;
@@ -551,11 +584,30 @@ export function ScrambleWorld() {
         rn.retarget = 0;
       }
     } else rn.stuck = 0;
+
     if (rn.reverse > 0) {
       rn.reverse -= dt;
       return { ix: -dx / d, iz: dz / d, dash: false };
     }
-    const wantDash = rn.ramTarget >= 0 && d < 5 && rn.dashCd <= 0 && Math.random() < 0.06;
+
+    // ── 돌진(공격) 타이밍 최적화 ──
+    let wantDash = false;
+    if (rn.ramTarget >= 0 && rn.dashCd <= 0 && d >= 1.4 && d <= 3.8) {
+      // 상대를 정면으로 바라보고 있을 때만 정확히 돌진!
+      const headingToTarget = Math.atan2(dx, -dz);
+      const angleDiff = Math.abs(wrap(headingToTarget - rn.heading));
+      if (angleDiff < 0.45 && Math.random() < 0.35) {
+        wantDash = true;
+      }
+    } else if (rn.ramTarget < 0 && rn.dashCd <= 0 && d >= 2.8 && d <= 4.5 && Math.random() < 0.04) {
+      // 바닥의 고급 부품을 향해 빠르게 대시하여 선점
+      const headingToPart = Math.atan2(dx, -dz);
+      const angleDiff = Math.abs(wrap(headingToPart - rn.heading));
+      if (angleDiff < 0.4) {
+        wantDash = true;
+      }
+    }
+
     return { ix: dx / d, iz: -dz / d, dash: wantDash };
   };
 
@@ -722,6 +774,10 @@ export function ScrambleWorld() {
         b.speed *= 0.55;
         dropParts(a, loseA, -nx, -nz);
         dropParts(b, loseB, nx, nz);
+        a.ramTarget = -1;
+        b.ramTarget = -1;
+        a.retarget = 0.5;
+        b.retarget = 0.5;
 
         sfx.bump();
         const near = Math.hypot(P.x - a.x, P.z - a.z) < 16;
