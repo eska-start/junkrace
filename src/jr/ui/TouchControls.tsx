@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { isTouchDevice, pressDash, pressItem, pressJump, setPedalMode, setTouchStick, setTouchBoost, setTouchFire } from '../game/input';
+import { isTouchDevice, pressDash, pressItem, pressJump, setPedalMode, setTouchStick, setTouchBoost, setTouchFire, setTouchJump } from '../game/input';
 import { GameIcon, type IconName } from './GameIcon';
 
 function HoldButton({ children, className, hold, label }: { children: ReactNode; className: string; hold: (pressed: boolean) => void; label: string }) {
@@ -18,7 +18,7 @@ export function TouchControls({ mode = 'move', boost = false, fire = false, dash
   useEffect(() => {
     // The left stick drives both steering and throttle in every mobile phase.
     setPedalMode(false);
-    return () => { setTouchBoost(false); setTouchFire(false); setTouchStick(0, 0, false); };
+    return () => { setTouchBoost(false); setTouchFire(false); setTouchJump(false); setTouchStick(0, 0, false); };
   }, [drive]);
   useEffect(() => {
     if (!touch || !area.current) return;
@@ -58,7 +58,17 @@ export function TouchControls({ mode = 'move', boost = false, fire = false, dash
     {drive && <div className="jr-touch-actions">
         {fire && <HoldButton className="jr-fire-control" hold={setTouchFire} label="발사"><GameIcon name="target" /><span>발사</span></HoldButton>}
         {boost && <HoldButton className="jr-boost-control" hold={setTouchBoost} label="부스트"><GameIcon name="boost" /><span>부스트</span></HoldButton>}
-        <button className="jr-jump-control" disabled={disabled} aria-label="점프" onPointerDown={(e) => { e.preventDefault(); pressJump(); }}><GameIcon name="jump" /><span>점프</span></button>
+        <HoldButton
+          className="jr-jump-control"
+          hold={(pressed) => {
+            setTouchJump(pressed);
+            if (pressed) pressJump();
+          }}
+          label="드리프트 / 점프"
+        >
+          <GameIcon name="jump" />
+          <span>드리프트</span>
+        </HoldButton>
         <button disabled={!item || disabled} aria-label="아이템 사용" onPointerDown={(e) => { e.preventDefault(); pressItem(); }}><GameIcon name={item ?? 'parts'} /><span>아이템</span></button>
       </div>}
   </div>;

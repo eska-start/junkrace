@@ -68,8 +68,8 @@ function Settings({ onClose }: { onClose: () => void }) {
     <button className="jr-setting" onClick={() => { sfx.init(); setMuted(sfx.toggleMute()); }}><span><GameIcon name={muted ? 'mute' : 'sound'} /> 배경음 / 효과음</span><strong>{muted ? 'OFF' : 'ON'}</strong></button>
     <button className="jr-setting" onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.().catch(() => {}); }}><span>전체 화면</span><GameIcon name="arrow" /></button>
     <div className="jr-help"><h3>부품 쟁탈전</h3><p>WASD / 방향키로 이동. Shift 또는 F로 돌진하면 상대가 부품을 흘립니다.</p><h3>페인트 영역 배틀</h3>
-      <p>W / ↑ 가속 · S / ↓ 제동 및 후진<br />A / D 또는 ← / → 조향<br />Space(J) 발사 · Q 점프 · Shift 부스트 · E 아이템</p>
-      <p>자동 전진은 없습니다. 가속에서 손을 떼면 자연스럽게 감속합니다. 모바일은 왼쪽 스틱으로 전후좌우 주행하고 오른쪽 아래에서 점프·부스트·아이템을 사용합니다.</p>
+      <p>W / ↑ 가속 · S / ↓ 제동 및 후진<br />A / D 또는 ← / → 조향<br />Q / . 점프 & 드리프트 (코너링 중 지속 시 미니터보 발동)<br />Shift 부스트 · Space(J) 발사 · E 아이템</p>
+      <p>코너를 돌며 Q(또는 .)를 누르면 홉 점프 후 드리프트를 시작합니다. 카운터스티어로 라인을 잡고, 키를 놓으면 모인 불꽃에 따라 미니터보 가속이 발동합니다!</p>
     </div>
   </Modal>;
 }

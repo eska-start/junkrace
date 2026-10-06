@@ -247,7 +247,7 @@ export function Car({ build, items, characterId, stateRef, preview, jersey, noDr
 
     if (st && root.current) {
       root.current.position.set(st.x, st.y, st.z);
-      root.current.rotation.y = st.heading + st.spinAngle;
+      root.current.rotation.y = st.heading + st.spinAngle + (st.driftAngle ?? 0);
       m.stun = st.stun;
 
       if (shieldRef.current) {

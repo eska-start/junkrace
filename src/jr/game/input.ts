@@ -1,6 +1,6 @@
 export const input = {
-  x: 0, y: 0, boost: false, fire: false,
-  touchX: 0, touchY: 0, touchActive: false, touchBoost: false, touchFire: false,
+  x: 0, y: 0, boost: false, fire: false, jump: false,
+  touchX: 0, touchY: 0, touchActive: false, touchBoost: false, touchFire: false, touchJump: false,
   touchAccel: false, touchBrake: false, pedalMode: false,
   itemPresses: 0, dashPresses: 0, jumpPresses: 0, active: false,
 };
@@ -21,7 +21,8 @@ function keyboardControl(i: number) {
   const up = keys.has(k.up) || solo && keys.has('ArrowUp');
   const down = keys.has(k.down) || solo && keys.has('ArrowDown');
   const y = down ? -1 : up ? 1 : 0;
-  return { x, y, fire: keys.has(k.fire) || solo && keys.has('KeyJ'), boost: keys.has(k.boost), ...edges[i] };
+  const jump = keys.has(k.jump) || Boolean(solo && (keys.has('KeyQ') || keys.has('Period')));
+  return { x, y, fire: keys.has(k.fire) || solo && keys.has('KeyJ'), boost: keys.has(k.boost), jump, ...edges[i] };
 }
 function recompute() {
   const k = keyboardControl(0);
@@ -32,15 +33,16 @@ function recompute() {
     : input.touchActive ? input.touchY : k.y;
   input.boost = k.boost || input.touchBoost;
   input.fire = k.fire || input.touchFire;
+  input.jump = k.jump || input.touchJump;
 }
 export function getControl(index = 0) {
   return index === 0
-    ? { x: input.x, y: input.y, boost: input.boost, fire: input.fire, itemPresses: input.itemPresses, dashPresses: input.dashPresses, jumpPresses: input.jumpPresses }
+    ? { x: input.x, y: input.y, boost: input.boost, fire: input.fire, jump: input.jump, itemPresses: input.itemPresses, dashPresses: input.dashPresses, jumpPresses: input.jumpPresses }
     : keyboardControl(index);
 }
 export function resetInput() {
   keys.clear();
-  Object.assign(input, { x: 0, y: 0, boost: false, fire: false, touchX: 0, touchY: 0, touchActive: false, touchBoost: false, touchFire: false, touchAccel: false, touchBrake: false });
+  Object.assign(input, { x: 0, y: 0, boost: false, fire: false, jump: false, touchX: 0, touchY: 0, touchActive: false, touchBoost: false, touchFire: false, touchJump: false, touchAccel: false, touchBrake: false });
   recompute();
 }
 let bound = false;
@@ -75,6 +77,7 @@ export function setTouchStick(x: number, y: number, active: boolean) {
 }
 export function setTouchBoost(v: boolean) { input.touchBoost = v; recompute(); }
 export function setTouchFire(v: boolean) { input.touchFire = v; recompute(); }
+export function setTouchJump(v: boolean) { input.touchJump = v; recompute(); }
 export function setTouchAccel(v: boolean) { input.touchAccel = v; recompute(); }
 export function setTouchBrake(v: boolean) { input.touchBrake = v; recompute(); }
 export function setPedalMode(v: boolean) { resetInput(); input.pedalMode = v; recompute(); }

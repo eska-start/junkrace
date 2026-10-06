@@ -218,6 +218,14 @@ export interface VehicleState {
   spinAngle: number;
   stun: number;
   shield: number;
+  /** 마리오카트 스타일 드리프트 & 조작 메카닉 */
+  driftDir: number; // -1: 좌측 드리프트, 1: 우측 드리프트, 0: 미드리프트
+  driftTime: number; // 드리프트 지속 시간 (초)
+  driftLevel: number; // 0: 일반, 1: 청색 미니터보, 2: 주황색 슈퍼 미니터보
+  driftAngle: number; // 드리프트 시 차체 회전각 오프셋 (라디안)
+  hopTime: number; // 홉 도약 타이머
+  prevDriftLevel: number; // 스파크 단계 변화 감지용
+  turboRelease: number; // 0: 미발동, 1: 청색 터보 발동, 2: 주황색 슈퍼 터보 발동
 }
 
 export const newVehicleState = (x: number, z: number, heading: number): VehicleState => ({
@@ -243,14 +251,25 @@ export const newVehicleState = (x: number, z: number, heading: number): VehicleS
   spinAngle: 0,
   stun: 0,
   shield: 0,
+  driftDir: 0,
+  driftTime: 0,
+  driftLevel: 0,
+  driftAngle: 0,
+  hopTime: 0,
+  prevDriftLevel: 0,
+  turboRelease: 0,
 });
 
 export interface Control {
   steer: number;
   throttle: number;
   boost: boolean;
-  /** 사격 버튼 (드리프트 대체) */
+  /** 사격 버튼 */
   fire?: boolean;
+  /** 점프/드리프트 홀드 상태 */
+  jump?: boolean;
+  /** 점프/드리프트 신규 입력 엣지 트리거 */
+  hopTrigger?: boolean;
 }
 
 export interface Surface {
@@ -275,6 +294,8 @@ export function stepVehicle(
 ) {
   st.t += dt;
   const prevSpeed = st.speed;
+  st.turboRelease = 0;
+  if (st.hopTime > 0) st.hopTime = Math.max(0, st.hopTime - dt);
 
   // boost
   if (ctrl.boost && ctrl.throttle > 0.05 && spec.boostPower > 0 && st.boostEnergy >= 0.45 && st.boostTime <= 0) {
@@ -292,16 +313,16 @@ export function stepVehicle(
 
   // speed
   const maxS = spec.maxSpeed * (boosting ? 1 + spec.boostPower : 1) * (itemBoosting ? 1.45 : 1) * (0.55 + 0.45 * surface.friction);
-  // 엑셀을 밟고 있을 때만 가속 — 아무것도 누르지 않으면 절대 앞으로 가지 않는다
+  // 엑셀 가속 / 제동
   if (ctrl.throttle > 0.05) {
-    // 엑셀: 전진 가속 (후진 중이면 먼저 감속)
     st.speed += spec.accel * ctrl.throttle * (boosting ? 1.6 : 1) * (itemBoosting ? 1.5 : 1) * dt;
   } else if (ctrl.throttle < -0.05) {
     if (st.speed > 0.6) st.speed += spec.accel * 1.35 * ctrl.throttle * dt; // 브레이크 제동
     else st.speed += spec.accel * 0.7 * ctrl.throttle * dt; // 정지 상태에선 후진
   } else {
-    // 페달을 밟지 않으면 굴러가다 멈춤
-    st.speed -= st.speed * 2.4 * dt;
+    // 드리프트 중에는 탄력을 유지하여 속도가 급격히 죽지 않음 (마리오카트 코너링 감각)
+    const driftCoast = st.driftDir !== 0 ? 0.9 : 2.4;
+    st.speed -= st.speed * driftCoast * dt;
     if (Math.abs(st.speed) < 0.18) st.speed = 0;
   }
   // drag
@@ -310,14 +331,97 @@ export function stepVehicle(
   st.speed -= st.speed * 0.25 * (2 - surface.friction) * dt;
   if (st.speed < -maxS * 0.4) st.speed = -maxS * 0.4;
 
-  // steering
-  const targetSteer = ctrl.steer;
-  st.steer += (targetSteer - st.steer) * Math.min(1, dt * (spec.onFoot ? 14 : 7));
   const speedFrac = Math.min(1, Math.abs(st.speed) / Math.max(1, spec.maxSpeed));
-  const turnCurve = spec.onFoot ? 1 : Math.sin(Math.min(1, speedFrac * 1.4) * Math.PI * 0.5) * (1 - speedFrac * 0.3);
-  const turnRate = (spec.onFoot ? 3.6 : 2.4 * spec.grip) * turnCurve;
+  const wantsHop = Boolean(ctrl.hopTrigger);
+  const isJumpHeld = Boolean(ctrl.jump);
+  const canInitiateDrift = !spec.onFoot && !st.airborne && st.speed > 3.5 && st.stun <= 0;
+
+  // ── 마리오카트 홉 & 드리프트 개시 판정 ──
+  if (wantsHop) {
+    if (canInitiateDrift && Math.abs(ctrl.steer) > 0.16) {
+      // 스티어링을 꺾은 채 점프하면 통통 튀며 드리프트 진입!
+      st.driftDir = ctrl.steer > 0 ? 1 : -1;
+      st.driftTime = 0;
+      st.driftLevel = 0;
+      st.prevDriftLevel = 0;
+      st.hopTime = 0.22;
+      st.vy = 4.2 * Math.max(0.85, spec.jump);
+      st.airborne = true;
+      st.bounce = 0.38;
+    } else if (!st.airborne) {
+      // 일반 직진 수동 점프
+      st.vy = 8.8 * spec.jump;
+      st.airborne = true;
+      st.bounce = 0.5;
+    }
+  }
+
+  // ── 스티어링 (조향) 반응성 대폭 향상 ──
+  const targetSteer = ctrl.steer;
+  st.steer += (targetSteer - st.steer) * Math.min(1, dt * (spec.onFoot ? 16 : 14));
+  // 고속에서도 선회력이 급감하지 않도록 부드러운 아케이드 커브 제공
+  const turnCurve = spec.onFoot ? 1 : Math.max(0.78, Math.min(1.22, 0.8 + speedFrac * 0.42));
+  const baseTurnRate = (spec.onFoot ? 3.8 : 2.65 * spec.grip) * turnCurve;
   const dir = st.speed >= 0 ? 1 : -1;
-  st.heading -= st.steer * turnRate * dt * dir;
+
+  // ── 드리프트 중 선회 및 미니터보 충전 ──
+  if (st.driftDir !== 0 && !spec.onFoot) {
+    const steerFactor = ctrl.steer * st.driftDir; // 1 = 인코스(급선회), -1 = 아웃코스(카운터스티어), 0 = 중립
+    const isMaintained =
+      (isJumpHeld || (Math.sign(ctrl.steer) === st.driftDir && Math.abs(ctrl.steer) > 0.12)) &&
+      st.speed > 2.4 &&
+      st.stun <= 0;
+
+    if (isMaintained) {
+      // 인코스로 꺾으면 회전 반경이 좁아지고, 카운터스티어를 치면 넓어져 라인 조절이 가능함!
+      const driftTurnMul =
+        steerFactor >= 0
+          ? 1.15 + 0.6 * steerFactor
+          : Math.max(0.38, 1.15 + 0.72 * steerFactor);
+      st.heading -= st.driftDir * baseTurnRate * driftTurnMul * dt * dir;
+
+      // 미니터보 차지 게이지: 인코스로 감을수록 35% 더 빠르게 모임
+      const chargeRate = steerFactor > 0.15 ? 1.35 : steerFactor < -0.15 ? 0.75 : 1.0;
+      st.driftTime += dt * chargeRate;
+
+      // 미니터보 2단계 판정 (0.65초: 청색 미니터보, 1.5초: 주황색 슈퍼 미니터보)
+      st.prevDriftLevel = st.driftLevel;
+      if (st.driftTime >= 1.5) {
+        st.driftLevel = 2;
+      } else if (st.driftTime >= 0.65) {
+        st.driftLevel = 1;
+      } else {
+        st.driftLevel = 0;
+      }
+
+      // 비주얼 카트 슬라이드 각도 (인코스로 노즈가 틀어지는 마리오카트 실루엣)
+      const targetDriftYaw = -st.driftDir * (0.34 - 0.12 * steerFactor);
+      st.driftAngle += (targetDriftYaw - st.driftAngle) * Math.min(1, dt * 14);
+      st.skid = 1.0;
+    } else {
+      // ── 드리프트 해제 & 미니터보 부스트 발동! ──
+      const released = st.driftLevel;
+      if (released === 2) {
+        // 주황색 슈퍼 미니터보
+        st.itemBoost = Math.max(st.itemBoost, 1.35);
+        st.speed = Math.max(st.speed * 1.25, spec.maxSpeed * 1.4);
+        st.turboRelease = 2;
+      } else if (released === 1) {
+        // 청색 미니터보
+        st.itemBoost = Math.max(st.itemBoost, 0.75);
+        st.speed = Math.max(st.speed * 1.15, spec.maxSpeed * 1.25);
+        st.turboRelease = 1;
+      }
+      st.driftDir = 0;
+      st.driftTime = 0;
+      st.driftLevel = 0;
+      st.prevDriftLevel = 0;
+    }
+  } else {
+    st.heading -= st.steer * baseTurnRate * dt * dir;
+    st.driftAngle += (0 - st.driftAngle) * Math.min(1, dt * 10);
+  }
+
   // instability wander
   if (spec.wobble > 0 && !st.airborne) {
     st.heading += Math.sin(st.t * 2.7) * spec.wobble * 0.55 * speedFrac * dt;
@@ -342,17 +446,30 @@ export function stepVehicle(
     st.y += (surface.ground - st.y) * Math.min(1, dt * 10);
   }
 
-  // integrate
-  const fx = Math.sin(st.heading);
-  const fz = Math.cos(st.heading);
-  // slight sideways slip for low-grip cars (드리프트 조작은 제거됨)
-  const drift = (1 - Math.min(1, spec.grip)) * 2.5 * st.steer * speedFrac * (spec.onFoot ? 0 : 1);
-  st.x += (fx * st.speed + fz * drift) * dt;
-  st.z += (fz * st.speed - fx * drift) * dt;
+  // integrate (위치 적분)
+  if (st.driftDir !== 0 && !spec.onFoot) {
+    // 드리프트 중에는 카트가 미끄러지며 바깥쪽으로 원심력 슬립을 발생시킴
+    const slipAngle = st.driftAngle * 0.45;
+    const travelHeading = st.heading + slipAngle;
+    const fx = Math.sin(travelHeading);
+    const fz = Math.cos(travelHeading);
+    const sideX = Math.cos(st.heading) * st.driftDir * 1.7;
+    const sideZ = -Math.sin(st.heading) * st.driftDir * 1.7;
+    st.x += (fx * st.speed + sideX) * dt;
+    st.z += (fz * st.speed + sideZ) * dt;
+  } else {
+    const fx = Math.sin(st.heading);
+    const fz = Math.cos(st.heading);
+    const drift = (1 - Math.min(1, spec.grip)) * 2.2 * st.steer * speedFrac * (spec.onFoot ? 0 : 1);
+    st.x += (fx * st.speed + fz * drift) * dt;
+    st.z += (fz * st.speed - fx * drift) * dt;
+  }
 
   // obstacles
   st.hit = Math.max(0, st.hit - dt);
   const selfR = spec.onFoot ? 0.5 : 1.1;
+  const fx = Math.sin(st.heading);
+  const fz = Math.cos(st.heading);
   for (const o of obstacles) {
     const dx = st.x - o.x;
     const dz = st.z - o.z;
@@ -377,18 +494,27 @@ export function stepVehicle(
 
   // visual
   const accelNow = (st.speed - prevSpeed) / Math.max(dt, 0.001);
-  st.accelVis += (accelNow - st.accelVis) * Math.min(1, dt * 6);
+  st.accelVis += (accelNow - st.accelVis) * Math.min(1, dt * 7);
   const wob = spec.wobble;
+  // 마리오카트 특유의 활기찬 서스펜션 롤 (드리프트 시 안쪽으로 차체가 쏠림)
+  const driftRoll = st.driftDir !== 0 ? -st.driftDir * 0.19 : 0;
   const targetRoll =
-    -st.steer * speedFrac * (0.14 + wob * 0.3) +
+    -st.steer * speedFrac * (0.16 + wob * 0.3) +
+    driftRoll +
     Math.sin(st.t * 5.1) * wob * 0.11 * (0.4 + speedFrac) +
     Math.sin(st.t * 13.3) * wob * 0.03;
-  const targetPitch = -st.accelVis * 0.012 + Math.sin(st.t * 7.7) * wob * 0.05 + (st.airborne ? -st.vy * 0.03 : 0);
-  st.roll += (targetRoll - st.roll) * Math.min(1, dt * 5);
-  st.pitch += (targetPitch - st.pitch) * Math.min(1, dt * 5);
-  st.bounce *= Math.max(0, 1 - dt * 3);
+  // 가속 시 후방 스쿼트, 제동 시 전방 다이브
+  const targetPitch =
+    -st.accelVis * 0.016 +
+    Math.sin(st.t * 7.7) * wob * 0.05 +
+    (st.airborne ? -st.vy * 0.025 : 0);
+  st.roll += (targetRoll - st.roll) * Math.min(1, dt * 8);
+  st.pitch += (targetPitch - st.pitch) * Math.min(1, dt * 8);
+  st.bounce *= Math.max(0, 1 - dt * 3.5);
   st.wheelSpin += st.speed * dt;
-  st.skid = Math.abs(st.steer) * speedFrac * (surface.friction < 1 ? 0.3 : 1);
+  if (st.driftDir === 0) {
+    st.skid = Math.abs(st.steer) * speedFrac * (surface.friction < 1 ? 0.3 : 1);
+  }
 }
 
 /** Simple on-foot movement for the collection phase (camera-relative) */

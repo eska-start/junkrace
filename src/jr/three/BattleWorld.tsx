@@ -33,6 +33,7 @@ export const battleHUD = {
   statSpeed: 0, statAccel: 0, statGrip: 0,
   completeness: 0, completenessMax: 9, paintNerf: 1,
   brushName: null as string | null, paintWidth: 1, maxSpeed: 0,
+  driftLevel: 0, driftDir: 0,
   rank: 1, focus: 0, item: null as RaceItem | null,
   mode: 'ffa' as 'ffa' | 'team', myTeam: 0,
   teamScores: [] as { team: number; color: string; paint: number }[],
@@ -271,7 +272,7 @@ export function BattleWorld() {
     const paint = new TerritoryMap(teamMode ? [TEAM_COLORS[0], TEAM_COLORS[1]] : colors);
     return {
       teamMode, myTeam, actors, paint, readyEnds: 0, playEnds: 0, finishedAt: 0, submitted: false, shake: 0,
-      droplets: Array.from({ length: 150 }, (): Droplet => ({ x: 0, y: -100, z: 0, vx: 0, vy: 0, vz: 0, life: 0, scale: 0, color: '#ffffff' })),
+      droplets: Array.from({ length: 320 }, (): Droplet => ({ x: 0, y: -100, z: 0, vx: 0, vy: 0, vz: 0, life: 0, scale: 0, color: '#ffffff' })),
       dropIndex: 0, fxT: 0, scoreT: 0, beep: 4,
       capsules: ITEM_SPOTS.map(([x, z]) => ({ x, z, cooldown: 0 })),
       missiles: Array.from({ length: 6 }, (): Missile => ({ active: false, x: 0, y: 0, z: 0, heading: 0, owner: 0, target: 0, life: 0 })),
@@ -491,7 +492,17 @@ export function BattleWorld() {
     a.reverse = Math.max(0, a.reverse - dt);
     const reversing = a.reverse > 0;
     a.previousX = a.st.x; a.previousZ = a.st.z;
-    return { steer: Math.max(-1, Math.min(1, -d * 1.8)) * (reversing ? -1 : 1), throttle: reversing ? -1 : Math.abs(d) > 1 ? 0.55 : 1, boost: Math.abs(d) < 0.15 && a.st.boostEnergy > 0.85 };
+    const steer = Math.max(-1, Math.min(1, -d * 1.8)) * (reversing ? -1 : 1);
+    const sharpCorner = Math.abs(d) > 0.52 && a.st.speed > 5.2 && !a.st.airborne && !reversing;
+    const botHop = sharpCorner && a.st.driftDir === 0 && a.jumpCd <= 0;
+    if (botHop) a.jumpCd = 0.8;
+    return {
+      steer,
+      throttle: reversing ? -1 : Math.abs(d) > 1 ? 0.6 : 1,
+      boost: Math.abs(d) < 0.15 && a.st.boostEnergy > 0.85,
+      jump: a.st.driftDir !== 0 && Math.abs(d) > 0.3,
+      hopTrigger: botHop,
+    };
   }
   function finish() {
     battleHUD.phase = 'finished'; battleHUD.remaining = 0;
@@ -560,20 +571,23 @@ export function BattleWorld() {
         let ctrl: Control;
         if (a.racer.controlIndex !== undefined) {
           const control = getControl(a.racer.controlIndex);
-          ctrl = { steer: control.x, throttle: control.y, boost: control.boost, fire: control.fire };
           if (control.itemPresses > a.usedPress) { a.usedPress = control.itemPresses; useItem(i); }
           const jumpPresses = control.jumpPresses ?? 0;
+          const hopTrigger = jumpPresses > a.usedJump && a.jumpCd <= 0;
           if (jumpPresses > a.usedJump) {
             a.usedJump = jumpPresses;
-            // 지면에 있고 쿨다운이 끝났을 때만 점프
-            if (!st.airborne && a.jumpCd <= 0) {
-              st.vy = 9.2 * a.spec.jump;
-              st.airborne = true;
-              a.jumpCd = 0.55;
-              a.jumps++;
-              if (i === battleHUD.focus) sfx.jump();
-            }
+            a.jumpCd = 0.22;
+            a.jumps++;
+            if (i === battleHUD.focus) sfx.jump();
           }
+          ctrl = {
+            steer: control.x,
+            throttle: control.y,
+            boost: control.boost,
+            fire: control.fire,
+            jump: Boolean(control.jump),
+            hopTrigger,
+          };
         } else {
           ctrl = botControl(a, i, dt);
           // 봇 사격: 정면 콘 안에 상대가 있으면 발사
@@ -589,16 +603,12 @@ export function BattleWorld() {
           if (a.aimCd <= 0) a.aimCd = Math.random() < 0.25 ? 0.6 + Math.random() : 0;
           a.itemCd -= dt;
           if (a.itemCd <= 0 && a.items.length) { useItem(i); a.itemCd = 4 + Math.random() * 4; }
-          // 봇도 가끔 점프해서 벽을 넘거나 분위기를 맞춘다
-          if (!st.airborne && a.jumpCd <= 0 && Math.abs(st.speed) > 6 && Math.random() < 0.004) {
-            st.vy = 9.2 * a.spec.jump; st.airborne = true; a.jumpCd = 0.55; a.jumps++;
-          }
         }
         if (a.spin > 0) {
           a.spin -= dt; st.spinAngle += dt * 10; ctrl = { steer: 0, throttle: 0, boost: false };
           if (a.spin <= 0) st.spinAngle = 0;
         }
-        // ── 사격 (드리프트 대신 발사 버튼) ──
+        // ── 사격 (발사 버튼) ──
         a.fireCd -= dt;
         if (i === 0) sim.localFiring = Boolean(ctrl.fire);
         if (ctrl.fire && a.fireCd <= 0) fire(i);
@@ -609,6 +619,32 @@ export function BattleWorld() {
         const boostBefore = st.boostTime;
         const speedBefore = st.speed;
         stepVehicle(st, a.spec, ctrl, dt, { friction, ground, jumpImpulse: jump ? 9.5 : undefined }, ARENA_OBSTACLES);
+
+        // ── 마리오카트 미니터보 발동 및 스파크 이펙트 ──
+        if (st.turboRelease > 0) {
+          const isSuper = st.turboRelease === 2;
+          a.boosts++;
+          if (i === battleHUD.focus) {
+            sfx.driftRelease(isSuper ? 2 : 1);
+            sfx.boost();
+            sim.shake = Math.max(sim.shake, isSuper ? 0.45 : 0.25);
+          }
+          emit(st.x, st.y + 0.35, st.z, isSuper ? '#ff6d00' : '#00e5ff', isSuper ? 26 : 16, 5.2);
+        }
+        if (i === battleHUD.focus && st.driftLevel > 0 && st.driftLevel !== st.prevDriftLevel) {
+          sfx.driftCharge(st.driftLevel as 1 | 2);
+        }
+        if (st.driftLevel > 0 && !st.airborne) {
+          const fx = Math.sin(st.heading), fz = Math.cos(st.heading);
+          const sideOffset = st.driftDir * 0.45;
+          const rearX = st.x - fx * 1.1 + fz * sideOffset;
+          const rearZ = st.z - fz * 1.1 - fx * sideOffset;
+          const sparkColor = st.driftLevel === 2
+            ? (Math.random() < 0.6 ? '#ff6d00' : '#ffeb3b')
+            : (Math.random() < 0.6 ? '#00e5ff' : '#ffffff');
+          emit(rearX, st.y + 0.2, rearZ, sparkColor, st.driftLevel === 2 ? 4 : 2, 2.8);
+        }
+
         if (!st.airborne) {
           const fx = Math.sin(st.heading), fz = Math.cos(st.heading);
           const pitch = -Math.atan2(arenaHeight(st.x + fx * 0.7, st.z + fz * 0.7) - arenaHeight(st.x - fx * 0.7, st.z - fz * 0.7), 1.4);
@@ -805,6 +841,7 @@ export function BattleWorld() {
     }
     const focused = sim.actors[battleHUD.focus] ?? sim.actors[0], p = focused.st;
     battleHUD.speed = p.speed; battleHUD.boost = p.boostEnergy; battleHUD.onFoot = focused.spec.onFoot;
+    battleHUD.driftLevel = p.driftLevel ?? 0; battleHUD.driftDir = p.driftDir ?? 0;
     battleHUD.completeness = focused.spec.completeness; battleHUD.completenessMax = focused.spec.completenessMax; battleHUD.paintNerf = focused.spec.paintNerf;
     battleHUD.paintWidth = focused.spec.paintWidth; battleHUD.maxSpeed = focused.spec.maxSpeed;
     {
@@ -821,12 +858,19 @@ export function BattleWorld() {
     battleHUD.statSpeed = focused.spec.maxSpeed; battleHUD.statAccel = focused.spec.accel; battleHUD.statGrip = focused.spec.grip;
     sfx.engine(playing ? Math.min(1, Math.abs(p.speed) / 25) : 0, p.boostTime > 0 || p.itemBoost > 0);
     const fx = Math.sin(p.heading), fz = Math.cos(p.heading), portrait = size.width / size.height < 0.8;
-    const back = portrait ? 17 : 13.5, up = portrait ? 15 : 11.5;
-    const k = 1 - Math.exp(-dt * 4);
+    const speedRatio = Math.min(1.4, Math.abs(p.speed) / Math.max(1, focused.spec.maxSpeed));
+    const turboPull = (p.boostTime > 0 || p.itemBoost > 0) ? 2.4 : 0;
+    const driftPull = Math.abs(p.driftDir) * 0.7;
+    const back = (portrait ? 17 : 13.5) + speedRatio * 1.8 + turboPull + driftPull;
+    const up = (portrait ? 15 : 11.5) + speedRatio * 0.5;
+    const k = 1 - Math.exp(-dt * 4.5);
     camera.position.lerp(new THREE.Vector3(p.x - fx * back, up + p.y * 0.7, p.z - fz * back), k);
     sim.shake = Math.max(0, sim.shake - dt * 2);
     const sh = sim.shake * 0.35;
-    camera.lookAt(p.x + fx * 1.8 + (Math.random() - 0.5) * sh, 0.8 + p.y, p.z + fz * 1.8);
+    const lookAhead = 2.0 + speedRatio * 2.2;
+    camera.lookAt(p.x + fx * lookAhead + (Math.random() - 0.5) * sh, 0.8 + p.y, p.z + fz * lookAhead);
+    // 마리오카트 스타일 다이내믹 뱅크 롤 (코너링 & 드리프트 시 카메라 틸트)
+    camera.rotation.z = (-p.steer * 0.035 - p.driftDir * 0.04) * speedRatio;
     lightTarget.current.x = p.x; lightTarget.current.z = p.z;
   });
   return <group>

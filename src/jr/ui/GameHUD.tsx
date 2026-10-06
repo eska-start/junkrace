@@ -104,14 +104,21 @@ export function BattleHUD() {
       <small className="jr-combat-tip">충돌/피격 시 부품이 빠져요 · 종이박스를 부수면 부품이 나와요 · 먹으면 장착 / 같은 종류는 등급 업</small>
     </div>
     </div>
-    <div className="jr-speed-readout"><strong>{Math.round(Math.abs(h.speed) * 6)}</strong><small>km/h</small><div><GameIcon name="boost" size={15} /><i><b style={{ width: `${h.boost * 100}%`, background: me?.color }} /></i></div>
+    <div className="jr-speed-readout">
+      <strong>{Math.round(Math.abs(h.speed) * 6)}</strong><small>km/h</small>
+      {h.driftLevel > 0 && (
+        <span className={`jr-drift-badge tier-${h.driftLevel}`}>
+          {h.driftLevel === 2 ? '🔥 SUPER TURBO' : '⚡ MINI TURBO'}
+        </span>
+      )}
+      <div><GameIcon name="boost" size={15} /><i><b style={{ width: `${h.boost * 100}%`, background: me?.color }} /></i></div>
       <div className="jr-brush-readout"><GameIcon name="paint" size={13} /><span>{h.onFoot ? '맨몸 · ' : ''}{h.brushName ?? '붓 없음'}</span><em>폭 ×{h.paintWidth.toFixed(2)}</em></div>
     </div>
-    {ready && <div className="jr-center-message jr-battle-intro"><span className="jr-eyebrow">NO FINISH LINE. JUST YOUR COLOR.</span><h1 key={h.countdown} className="jr-countdown-number">{h.countdown}</h1><p>90초 후, 가장 넓게 칠한 플레이어가 승리합니다.</p><div className="jr-inline-controls"><kbd>W / ↑</kbd> 가속 <kbd>Space</kbd> 발사 <kbd>Q</kbd> 점프 <kbd>E</kbd> 아이템</div><p className="jr-mobile-guide">모바일: 왼쪽 스틱으로 주행 · 오른쪽 버튼으로 발사 / 점프 / 부스트 / 아이템</p></div>}
+    {ready && <div className="jr-center-message jr-battle-intro"><span className="jr-eyebrow">NO FINISH LINE. JUST YOUR COLOR.</span><h1 key={h.countdown} className="jr-countdown-number">{h.countdown}</h1><p>90초 후, 가장 넓게 칠한 플레이어가 승리합니다.</p><div className="jr-inline-controls"><kbd>W / ↑</kbd> 가속 <kbd>Space</kbd> 발사 <kbd>Q / .</kbd> 드리프트 <kbd>Shift</kbd> 부스트 <kbd>E</kbd> 아이템</div><p className="jr-mobile-guide">모바일: 왼쪽 스틱으로 주행 · 오른쪽 버튼으로 발사 / 드리프트 / 부스트 / 아이템</p></div>}
     {!ready && h.elapsed < 1 && <div className="jr-center-message"><h1 className="jr-countdown-number">PAINT!</h1></div>}
     {!ready && !finished && Math.abs(h.speed) < 0.25 && h.throttle <= 0 && h.elapsed > 1 && <div className="jr-accelerate-prompt"><GameIcon name="play" size={18} />스틱을 위로 밀거나 W / ↑로 출발하세요</div>}
     {h.message && !ready && !finished && <div key={h.message.id} className="jr-game-toast">{h.message.text}</div>}
     {finished && <div className="jr-center-message"><span className="jr-eyebrow">BRUSHES DOWN</span><h1>TIME'S UP!</h1><p>최종 페인트 면적을 집계했습니다.</p></div>}
-    <TouchControls mode="drive" boost fire item={item?.icon ?? null} disabled={ready || finished} hint="W / ↑ 가속 · S / ↓ 제동 / 후진 · A / D 조향 · Space(J) 발사 · Q 점프 · Shift 부스트 · E 아이템" />
+    <TouchControls mode="drive" boost fire item={item?.icon ?? null} disabled={ready || finished} hint="W / ↑ 가속 · S / ↓ 제동 / 후진 · A / D 조향 · Q / . 드리프트/점프(지속 시 미니터보) · Shift 부스트 · Space(J) 발사 · E 아이템" />
   </div>;
 }

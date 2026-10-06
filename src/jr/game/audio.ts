@@ -378,6 +378,27 @@ class AudioEngine {
     const t = this.ctx!.currentTime;
     this.tone(1200, t, 0.04, 'square', 0.06, this.sfxBus, 800);
   }
+  driftCharge(level: 1 | 2) {
+    if (!this.ok('driftCharge', 0.15)) return;
+    const t = this.ctx!.currentTime;
+    if (level === 1) {
+      // 청색 미니터보 차지 사운드: 맑고 경쾌한 2단 차임
+      this.tone(784, t, 0.09, 'sine', 0.16, this.sfxBus, 1046);
+      this.tone(1046, t + 0.04, 0.12, 'triangle', 0.14, this.sfxBus, 1318);
+    } else {
+      // 주황색 슈퍼 미니터보 차지 사운드: 강력한 3단 신스 상승음
+      this.tone(988, t, 0.08, 'sawtooth', 0.14, this.sfxBus, 1318);
+      this.tone(1318, t + 0.03, 0.1, 'sawtooth', 0.16, this.sfxBus, 1760);
+      this.tone(1760, t + 0.06, 0.14, 'square', 0.12, this.sfxBus, 2093);
+    }
+  }
+  driftRelease(level: 1 | 2) {
+    if (!this.ok('driftRelease', 0.2)) return;
+    const t = this.ctx!.currentTime;
+    const isSuper = level === 2;
+    this.noiseHit(t, isSuper ? 0.45 : 0.3, isSuper ? 0.4 : 0.28, this.sfxBus, 'bandpass', 600, 2, 4500);
+    this.tone(isSuper ? 240 : 200, t, isSuper ? 0.4 : 0.28, 'sawtooth', isSuper ? 0.18 : 0.13, this.sfxBus, isSuper ? 1200 : 900);
+  }
 }
 
 export const sfx = new AudioEngine();
