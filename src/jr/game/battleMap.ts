@@ -1,29 +1,26 @@
 import type { Obstacle } from './vehicle';
 
 export const BATTLE_DURATION = 90;
-export const ARENA_SIZE = 64;
+export const ARENA_SIZE = 96;
 export const HALF = ARENA_SIZE / 2;
-export const ARENA_NAME = '컬러 팩토리';
+export const ARENA_NAME = '고물 공방';
+export const PLAZA_RADIUS = 16;
+export const LOOP_RADIUS = 34;
+export const LOOP_WIDTH = 10;
 export interface Barrier { x: number; z: number; w: number; d: number; h: number }
-export const BARRIERS: Barrier[] = [
-  { x: -17, z: 8, w: 2.8, d: 8, h: 1.5 }, { x: 16, z: -8, w: 2.8, d: 8, h: 1.5 },
-  { x: -4, z: 17, w: 8, d: 2.5, h: 1.4 }, { x: 5, z: -13, w: 7, d: 2.2, h: 1.2 },
-];
-export const ARENA_OBSTACLES: Obstacle[] = [
-  { x: -9, z: -5, r: 1.55 }, { x: 9, z: 5, r: 1.55 },
-  { x: -9, z: 5, r: 1.0 }, { x: 10, z: -6, r: 1.0 },
-  { x: -23, z: -18, r: 1.8 }, { x: 24, z: 19, r: 1.8 },
-];
+// 그레이박스 A: 내부를 벽으로 나누지 않는다. 중앙 광장 가장자리는 연결.
+export const BARRIERS: Barrier[] = [];
+export const ARENA_OBSTACLES: Obstacle[] = [];
 export const STARTS = [
-  { x: -23, z: 23, heading: Math.PI * 0.75 }, { x: 23, z: -23, heading: -Math.PI * 0.25 },
-  { x: -23, z: -23, heading: Math.PI * 0.25 }, { x: 23, z: 23, heading: -Math.PI * 0.75 },
+  { x: -8, z: -8, heading: Math.PI * 0.25 }, { x: 8, z: -8, heading: -Math.PI * 0.25 },
+  { x: -8, z: 8, heading: Math.PI * 0.75 }, { x: 8, z: 8, heading: -Math.PI * 0.75 },
 ];
 export const BOOST_PADS = [
-  { x: -23, z: 0, heading: Math.PI }, { x: 23, z: 0, heading: 0 },
-  { x: 0, z: -23, heading: Math.PI / 2 }, { x: 12, z: 23, heading: -Math.PI / 2 },
+  { x: -34, z: 0, heading: Math.PI }, { x: 34, z: 0, heading: 0 },
+  { x: 0, z: -34, heading: Math.PI / 2 }, { x: 12, z: 34, heading: -Math.PI / 2 },
 ];
-export const ITEM_SPOTS = [[0, 0], [-14, -14], [14, 14], [-24, 12], [24, -12], [0, -23]] as const;
-export const JUMP_PADS = [{ x: -3, z: 9, heading: Math.PI }, { x: 3, z: -7, heading: 0 }];
+export const ITEM_SPOTS = [[18, 18], [-18, -18], [18, -18], [-18, 18]] as const;
+export const JUMP_PADS = [{ x: -6, z: -31, heading: 0 }, { x: 6, z: 31, heading: Math.PI }];
 export function insideArena(x: number, z: number, margin = 0): boolean {
   const h = HALF - 1.5 - margin;
   if (Math.abs(x) > h || Math.abs(z) > h) return false;
@@ -35,16 +32,135 @@ export function blocked(x: number, z: number, margin = 0): boolean {
   return BARRIERS.some((b) => Math.abs(x - b.x) < b.w / 2 + margin && Math.abs(z - b.z) < b.d / 2 + margin);
 }
 export function paintable(x: number, z: number) { return insideArena(x, z) && !blocked(x, z); }
-// A raised shelf and its two ramps are part of the paintable surface, not a separate flat overlay.
-export function arenaHeight(x: number, z: number): number {
+// 02 cardboardOverpass: 동측 남북 고가. X방향 하부 횡단 가능.
+// 데크 상면 Y=5, 양쪽 접근 경사 각 12U, 중앙 데크 8U. 하부 유효 높이 4U 확보.
+export const OVERPASS = { x: 28, z: 0, w: 8, len: 32, deckY: 5, rampLen: 12, deckLen: 8 } as const;
+export function overpassDeckHeight(x: number, z: number): number {
+  const dx = x - OVERPASS.x, dz = z - OVERPASS.z;
+  if (Math.abs(dx) > OVERPASS.w / 2 || Math.abs(dz) > OVERPASS.len / 2) return 0;
+  const side = Math.min(1, Math.max(0, (OVERPASS.w / 2 - Math.abs(dx)) / 1.2));
+  const az = Math.abs(dz);
+  const deckHalf = OVERPASS.deckLen / 2;
+  const t = az <= deckHalf ? 1 : Math.max(0, 1 - (az - deckHalf) / OVERPASS.rampLen);
+  return OVERPASS.deckY * t * side;
+}
+export function underOverpass(x: number, z: number): boolean {
+  const dx = x - OVERPASS.x, dz = z - OVERPASS.z;
+  return Math.abs(dx) < OVERPASS.w / 2 + 1 && Math.abs(dz) < OVERPASS.deckLen / 2 + 1;
+}
+// ---- 01~08 배치표 (heading: XZ평면 +Z=0도, +X=90도) ----
+// 01 점프대 8x12x2, 02 고가 8x32x5, 03 뱅크 길폭10 반경18 외측높이2,
+// 04 낮은굴곡 5x6x0.7, 05 파괴폐품 4x4x1.2, 06 수리지점 4x3x2.5,
+// 07 부품상자 1.6^3, 08 가장자리장식 8x6x8 (경계 밖, 충돌 없음)
+export const RAMPS = [
+  { x: -6, z: -31, heading: 0 }, { x: 6, z: 31, heading: 180 },
+] as const;
+export const BANKS = [
+  { x: -24, z: -24, heading: 45 }, { x: 24, z: 24, heading: 225 },
+] as const;
+export const BUMPS = [
+  { x: -27, z: 8, heading: 90 }, { x: 12, z: -25, heading: 0 },
+] as const;
+export const BREAKABLES = [
+  { x: -22, z: -12, heading: 0 }, { x: 20, z: 14, heading: 0 },
+] as const;
+export const REPAIRS = [
+  { x: -37, z: 0, heading: 90 }, { x: 37, z: 0, heading: 270 },
+] as const;
+export const REPAIR_COOLDOWN = 10;
+export const BREAKABLE_RESPAWN = 12;
+function bankHeight(x: number, z: number): number {
   let h = 0;
-  if (z > -27 && z < -19 && Math.abs(x) < 20) {
-    h = 2.2 * Math.min(1, Math.max(0, (20 - Math.abs(x)) / 7));
-    h *= Math.min(1, (z + 27) / 1.5, (-19 - z) / 1.5);
+  for (const b of BANKS) {
+    const d = Math.hypot(x - b.x, z - b.z);
+    if (d < 13 || d > 23) continue;
+    const t = (d - 13) / 10;
+    h = Math.max(h, 2 * t * t * (3 - 2 * t));
   }
-  const d = Math.hypot(x + 22, z + 6);
-  if (d < 5.5) h = Math.max(h, 1.1 * (0.5 + 0.5 * Math.cos(Math.PI * d / 5.5)));
-  return Math.max(0, h);
+  return h;
+}
+function bumpHeight(x: number, z: number): number {
+  let h = 0;
+  for (const b of BUMPS) {
+    const rad = b.heading * Math.PI / 180;
+    const dx = x - b.x, dz = z - b.z;
+    const lx = dx * Math.cos(rad) + dz * Math.sin(rad);
+    const lz = -dx * Math.sin(rad) + dz * Math.cos(rad);
+    if (Math.abs(lx) > 2.5 || Math.abs(lz) > 3) continue;
+    const q = Math.sqrt((lx / 2.5) ** 2 + (lz / 3) ** 2);
+    if (q >= 1) continue;
+    h = Math.max(h, 0.7 * (0.5 + 0.5 * Math.cos(Math.PI * q)));
+  }
+  return h;
+}
+export type SurfaceId = 'ground' | 'rampA' | 'rampB' | 'deck';
+export interface DriveSurface { id: SurfaceId; ground: number; friction: number }
+function rampHeight(cx: number, cz: number, dir: 1 | -1, x: number, z: number): number {
+  const dx = x - cx, dz = z - cz;
+  if (Math.abs(dx) > 4 || Math.abs(dz) > 6) return 0;
+  const t = dir > 0 ? (dz + 6) / 12 : (6 - dz) / 12;
+  const side = Math.min(1, Math.max(0, (4 - Math.abs(dx)) / 1.5));
+  return 2 * Math.min(1, Math.max(0, t)) * side;
+}
+// 필수조건 1: 단일 arenaHeight 하나로 상하를 표현하지 않는다.
+// 이전 표면+현재 높이로 접촉면을 선택하고 하부 차량을 데크로 스냅하지 않는다.
+// 하부(y<2.5)는 지면 우선, 상부는 데크 유지. 접근 경사로를 타면 상부로 연결.
+export function getDriveSurface(x: number, z: number, currentY = 0, prevId: SurfaceId = 'ground'): DriveSurface {
+  const ha = rampHeight(-6, -31, 1, x, z);
+  const hb = rampHeight(6, 31, -1, x, z);
+  const hd = overpassDeckHeight(x, z);
+  const base = Math.max(0, ha, hb, bankHeight(x, z), bumpHeight(x, z));
+  const cands: DriveSurface[] = [{ id: 'ground', ground: base, friction: 1 }];
+  if (ha > 0.05) cands.push({ id: 'rampA', ground: ha, friction: 1 });
+  if (hb > 0.05) cands.push({ id: 'rampB', ground: hb, friction: 1 });
+  if (hd > 0.05) cands.push({ id: 'deck', ground: hd, friction: 1 });
+  if (prevId === 'deck') {
+    const deck = cands.find((c) => c.id === 'deck');
+    if (deck && Math.abs(deck.ground - currentY) < 1.6) return deck;
+    if (!deck && currentY > 2.5) return { id: 'deck', ground: 0, friction: 1 };
+  }
+  const prev = cands.find((c) => c.id === prevId);
+  if (prev && prev.id !== 'deck' && Math.abs(prev.ground - currentY) < 1.2) {
+    if (prev.id === 'ground' && hd > 0.5 && currentY > 2.5) {
+      const deck = cands.find((c) => c.id === 'deck');
+      if (deck) return deck;
+    }
+    return prev;
+  }
+  if (currentY < 2.5) {
+    let best = cands[0];
+    for (const c of cands) {
+      if (c.id === 'deck') continue;
+      if (c.ground <= currentY + 0.5 && c.ground >= best.ground) best = c;
+    }
+    return best;
+  }
+  let best = cands[0];
+  for (const c of cands) {
+    if (c.ground <= currentY + 0.5 && c.ground >= best.ground) best = c;
+  }
+  if (best.ground > currentY + 0.5) {
+    best = cands[0];
+    for (const c of cands) if (Math.abs(c.ground - currentY) < Math.abs(best.ground - currentY)) best = c;
+  }
+  return best;
+}
+// 필수조건 5: 점프 끝단 통과를 1회만 감지해 이륙. 램프 위 매 프레임 재발사 금지.
+export function rampTakeoff(prevX: number, prevZ: number, x: number, z: number): SurfaceId | null {
+  if (Math.abs(x + 6) < 4 || Math.abs(prevX + 6) < 4) {
+    if (prevZ < -25 && z >= -25 && z <= -19) return 'rampA';
+  }
+  if (Math.abs(x - 6) < 4 || Math.abs(prevX - 6) < 4) {
+    if (prevZ > 25 && z <= 25 && z >= 19) return 'rampB';
+  }
+  return null;
+}
+export const RAMP_TAKEOFF_VY = 9;
+export const LAND_TURBO_TIME = 0.35;
+// A raised shelf and its two ramps are part of the paintable surface, not a separate flat overlay.
+// 03 뱅크·04 굴곡은 단층 높이로 합성. 04는 통과형이라 원형 장애물로 등록 금지.
+export function arenaHeight(x: number, z: number): number {
+  return Math.max(0, rampHeight(-6, -31, 1, x, z), rampHeight(6, 31, -1, x, z), bankHeight(x, z), bumpHeight(x, z));
 }
 export function surfaceAreaFactor(x: number, z: number): number {
   const e = 0.12;
@@ -83,9 +199,9 @@ export function segmentClear(ax: number, az: number, bx: number, bz: number, mar
 }
 // A* navigation allows territory-seeking bots to route around obstacles.
 export function findPath(ax: number, az: number, bx: number, bz: number): [number, number][] {
-  const N = 30, step = 2;
-  const toCell = (n: number) => Math.max(0, Math.min(N - 1, Math.round((n + 29) / step)));
-  const at = (i: number): [number, number] => [i % N * step - 29, Math.floor(i / N) * step - 29];
+  const N = 48, step = ARENA_SIZE / N;
+  const toCell = (n: number) => Math.max(0, Math.min(N - 1, Math.round((n + HALF - step / 2) / step)));
+  const at = (i: number): [number, number] => [i % N * step - HALF + step / 2, Math.floor(i / N) * step - HALF + step / 2];
   const start = toCell(az) * N + toCell(ax), end = toCell(bz) * N + toCell(bx);
   const open = new Set([start]), closed = new Set<number>();
   const cost = new Map([[start, 0]]), prev = new Map<number, number>();

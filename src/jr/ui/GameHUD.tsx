@@ -33,7 +33,7 @@ export function CollectHUD() {
     {scramble.toast && !outro && <div key={scramble.toast.id} className="jr-game-toast" style={{ color: scramble.toast.text.startsWith('-') ? '#ffadb6' : '#fff9dc' }}>{scramble.toast.text}</div>}
     {ready && <div className="jr-center-message jr-collect-intro"><span className="jr-eyebrow">15 SECONDS. GRAB WHAT YOU CAN.</span><h1>모으고, 쌓고, 지켜라!</h1><p>부품은 머리 위에 쌓입니다.<br />상대에게 돌진하면 부품이 떨어져요.</p><div className="jr-inline-controls"><kbd>WASD</kbd> 이동 <kbd>Shift / F</kbd> 돌진</div></div>}
     {outro && <div className="jr-center-message jr-scrap-result"><span className="jr-eyebrow">COLLECTION COMPLETE</span><h1>이제, 자동차를 만들어요.</h1><div>{sorted.map((r) => <p key={r.name}><i style={{ background: r.jersey }} />{r.name}<strong>{r.count}<small>개</small></strong></p>)}</div></div>}
-    {!ready && !outro && <div className="jr-collect-caption"><i style={{ background: color }} />가진 부품이 많을수록, 상대의 표적이 됩니다.</div>}
+    {!ready && !outro && <div className="jr-collect-caption"><i style={{ background: color }} />바퀴·엔진·차체 우선, 붓은 필수! 가진 부품이 많을수록 표적이 됩니다.</div>}
     <TouchControls dash dashCd={scramble.dashCd} disabled={ready || outro} hint="WASD / 방향키 이동  ·  Shift / F 돌진  ·  부품은 자동 획득" />
   </div>;
 }
@@ -64,7 +64,7 @@ function TerritoryMinimap() {
       if (i === battleHUD.focus) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(p.heading) * 9, y + Math.cos(p.heading) * 9); ctx.stroke(); }
     });
   });
-  return <div className="jr-territory-map"><canvas ref={ref} width={180} height={180} aria-label="현재 페인트 영역 지도" /><span>COLOR FACTORY</span></div>;
+  return <div className="jr-territory-map"><canvas ref={ref} width={180} height={180} aria-label="현재 페인트 영역 지도" /><span>고물 공방 · 고가 제외</span></div>;
 }
 export function BattleHUD() {
   useRefresh();
@@ -75,7 +75,7 @@ export function BattleHUD() {
   const item = h.item ? BATTLE_ITEMS[h.item] : null;
   return <div className="ui jr-game-hud jr-battle-hud">
     <header className="jr-hud-top">
-      <div className="jr-hud-left"><HomeButton /><span className="jr-hud-stage">03 / PAINT TERRITORY</span></div>
+      <div className="jr-hud-left"><HomeButton /><span className="jr-hud-stage">03 / 고물 공방 영역전</span></div>
       <div className={`jr-round-timer ${h.remaining <= 10 && !ready ? 'urgent' : ''}`}><span>페인트 배틀</span><strong>{time}</strong><small>남은 시간</small></div>
       <div className="jr-own-territory" style={{ color: me?.color ?? '#f56a87' }}><GameIcon name="paint" size={23} /><div><small>{h.mode === 'team' ? `${TEAM_LABEL[h.myTeam]}이 칠한 영역` : '내 색으로 칠한 영역'}</small><strong>{((me?.paint ?? 0) * 100).toFixed(1)}<span>%</span></strong></div></div>
     </header>
@@ -93,15 +93,18 @@ export function BattleHUD() {
     <div className="jr-held-item"><div className={item ? 'loaded' : ''} style={{ borderColor: me?.color }}><GameIcon name={item?.icon ?? 'parts'} size={30} /><kbd>E</kbd></div><strong>{item?.name ?? '아이템 없음'}</strong>{item && <small>{item.desc}</small>}</div>
     <div className="jr-combat-panel" style={{ borderColor: me?.color }}>
       <div className="jr-combat-row"><GameIcon name="target" size={16} /><strong>{h.gunName ?? '맨손 (약함)'}</strong>{h.gunGrade && <em>{h.gunGrade}</em>}<kbd>Space</kbd></div>
-      <div className="jr-combat-stats"><span>공격 {h.gunDamage.toFixed(0)}</span><span>연사 {h.gunRate.toFixed(1)}/s</span><span>부품 {h.partCount}</span></div>
       <div className={`jr-build-meter ${h.completeness < h.completenessMax ? 'nerfed' : ''}`} title="바퀴 4 + 차체/엔진/부스터/앞 범퍼/스포일러가 모두 있어야 페인트 범위 100%">
         <small>차량 완성도 {h.completeness}/{h.completenessMax}</small>
         <div className="steps">{Array.from({ length: h.completenessMax }, (_, i) => <i key={i} className={i < h.completeness ? 'on' : ''} />)}</div>
         <em>페인트 범위 {Math.round(h.paintNerf * 100)}%{h.completeness < h.completenessMax ? ' ▼' : ''}</em>
       </div>
       <div className={`jr-hp ${h.hp < 0.3 ? 'low' : ''}`}><small>내구도</small><i><b style={{ width: `${h.hp * 100}%` }} /></i></div>
-      <div className="jr-combat-stats"><span>속도 {h.statSpeed.toFixed(1)}</span><span>가속 {h.statAccel.toFixed(1)}</span><span>접지 {(h.statGrip * 10).toFixed(1)}</span></div>
-      <small className="jr-combat-tip">충돌/피격 시 부품이 빠져요 · 종이박스를 부수면 부품이 나와요 · 먹으면 장착 / 같은 종류는 등급 업</small>
+      <div className="jr-brush-readout"><GameIcon name="paint" size={13} /><span>{h.onFoot ? '맨몸 · ' : ''}{h.brushName ?? '붓 없음'}</span></div>
+      <details className="jr-spec-details"><summary>상세 능력치는 조립 화면</summary>
+        <div className="jr-combat-stats"><span>공격 {h.gunDamage.toFixed(0)}</span><span>연사 {h.gunRate.toFixed(1)}/s</span><span>부품 {h.partCount}</span></div>
+        <div className="jr-combat-stats"><span>속도 {h.statSpeed.toFixed(1)}</span><span>가속 {h.statAccel.toFixed(1)}</span><span>접지 {(h.statGrip * 10).toFixed(1)}</span><span>폭 ×{h.paintWidth.toFixed(2)}</span></div>
+      </details>
+      <small className="jr-combat-tip">충돌/피격 시 부품이 빠져요 · 종이더미·박스를 부수면 부품 · 초록 링에서 바퀴 복구 · 고가 위는 집계 안 함</small>
     </div>
     </div>
     <div className="jr-speed-readout">
@@ -112,9 +115,9 @@ export function BattleHUD() {
         </span>
       )}
       <div><GameIcon name="boost" size={15} /><i><b style={{ width: `${h.boost * 100}%`, background: me?.color }} /></i></div>
-      <div className="jr-brush-readout"><GameIcon name="paint" size={13} /><span>{h.onFoot ? '맨몸 · ' : ''}{h.brushName ?? '붓 없음'}</span><em>폭 ×{h.paintWidth.toFixed(2)}</em></div>
+      <div className="jr-brush-readout"><GameIcon name="paint" size={13} /><span>{h.onFoot ? '맨몸 · ' : ''}{h.brushName ?? '붓 없음'}</span></div>
     </div>
-    {ready && <div className="jr-center-message jr-battle-intro"><span className="jr-eyebrow">NO FINISH LINE. JUST YOUR COLOR.</span><h1 key={h.countdown} className="jr-countdown-number">{h.countdown}</h1><p>90초 후, 가장 넓게 칠한 플레이어가 승리합니다.</p><div className="jr-inline-controls"><kbd>W / ↑</kbd> 가속 <kbd>Space</kbd> 발사 <kbd>Q / .</kbd> 드리프트 <kbd>Shift</kbd> 부스트 <kbd>E</kbd> 아이템</div><p className="jr-mobile-guide">모바일: 왼쪽 스틱으로 주행 · 오른쪽 버튼으로 발사 / 드리프트 / 부스트 / 아이템</p></div>}
+    {ready && <div className="jr-center-message jr-battle-intro"><span className="jr-eyebrow">결승선 없음. 고가 위는 집계 안 함.</span><h1 key={h.countdown} className="jr-countdown-number">{h.countdown}</h1><p>90초 후, 가장 넓게 칠한 플레이어가 승리합니다.</p><div className="jr-inline-controls"><kbd>W / ↑</kbd> 가속 <kbd>Space</kbd> 발사 <kbd>Q / .</kbd> 드리프트 <kbd>Shift</kbd> 부스트 <kbd>E</kbd> 아이템</div><p className="jr-mobile-guide">모바일: 왼쪽 스틱으로 주행 · 오른쪽 버튼으로 발사 / 드리프트 / 부스트 / 아이템</p></div>}
     {!ready && h.elapsed < 1 && <div className="jr-center-message"><h1 className="jr-countdown-number">PAINT!</h1></div>}
     {!ready && !finished && Math.abs(h.speed) < 0.25 && h.throttle <= 0 && h.elapsed > 1 && <div className="jr-accelerate-prompt"><GameIcon name="play" size={18} />스틱을 위로 밀거나 W / ↑로 출발하세요</div>}
     {h.message && !ready && !finished && <div key={h.message.id} className="jr-game-toast">{h.message.text}</div>}

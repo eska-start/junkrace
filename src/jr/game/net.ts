@@ -4,6 +4,8 @@ import type { CarBuild } from '../store';
 export interface NetCarState {
   x: number; y: number; z: number; heading: number; speed: number; steer: number;
   shield: number; firing: boolean; phase: string;
+  /** 권한: 주행 클라이언트가 판정한 접촉 표면. 수신 측은 추론 대신 이 값을 사용 */
+  surfId?: string;
   build?: CarBuild; items?: Record<number, string>;
   t: number;
 }

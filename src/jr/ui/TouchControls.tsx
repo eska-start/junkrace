@@ -4,8 +4,10 @@ import { GameIcon, type IconName } from './GameIcon';
 
 function HoldButton({ children, className, hold, label }: { children: ReactNode; className: string; hold: (pressed: boolean) => void; label: string }) {
   const [active, setActive] = useState(false);
-  const stop = () => { hold(false); setActive(false); };
-  useEffect(() => () => hold(false), [hold]);
+  const holdRef = useRef(hold);
+  useEffect(() => { holdRef.current = hold; });
+  const stop = () => { holdRef.current(false); setActive(false); };
+  useEffect(() => () => holdRef.current(false), []);
   return <button aria-label={label} className={`${className} ${active ? 'pressed' : ''}`} onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); hold(true); setActive(true); }} onPointerUp={stop} onPointerCancel={stop} onLostPointerCapture={stop} onContextMenu={(e) => e.preventDefault()}>{children}</button>;
 }
 export function TouchControls({ mode = 'move', boost = false, fire = false, dash = false, dashCd = 0, item, hint, disabled = false }: {

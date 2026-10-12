@@ -618,7 +618,7 @@ export function ScrambleWorld() {
     const bots: Racer[] = sim.runners.slice(1).map((b) => {
       const inv = inventoryOf(b);
       return { id: b.id, name: b.name, characterId: b.characterId, jersey: b.jersey,
-        build: autoBuild(inv), items: itemsMap(inv), isPlayer: b.controlIndex !== undefined, controlIndex: b.controlIndex, team: b.team,
+        build: autoBuild(inv, b.characterId), items: itemsMap(inv), isPlayer: b.controlIndex !== undefined, controlIndex: b.controlIndex, team: b.team,
         loadout: computeLoadout({ ...emptyStats(), common: inv.length }) };
     });
     const entries = sim.runners.map((x) => ({

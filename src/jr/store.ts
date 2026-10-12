@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { CHARACTERS, ITEMS, type Category } from './data/items';
 import type { Loadout, ScrapStats } from './game/scrap';
+import { computeSpec } from './game/vehicle';
 
 export type GameMode = 'ffa' | 'team';
 export const MODE_LABEL: Record<GameMode, string> = { ffa: '개인전', team: '2:2 팀전' };
@@ -101,10 +102,10 @@ export const useGame = create<GameState>((set, get) => ({
   },
   removeItem: (uid) => set((s) => ({ inventory: s.inventory.filter((i) => i.uid !== uid) })),
   setScrapSummary: (scrapSummary) => set({ scrapSummary }),
-  completeCollection: (inventory, scrapSummary) => set({
+  completeCollection: (inventory, scrapSummary) => set((s) => ({
     inventory, scrapSummary, bots: scrapSummary.bots, loadout: scrapSummary.loadout,
-    build: autoBuild(inventory), nextUid: Math.max(1, ...inventory.map((i) => i.uid + 1)),
-  }),
+    build: autoBuild(inventory, s.characterId), nextUid: Math.max(1, ...inventory.map((i) => i.uid + 1)),
+  })),
   finishCollect: () => set({ phase: 'build' }),
   equip: (slot, uid) => set((s) => {
     const slots = { ...s.build.slots };
@@ -140,25 +141,52 @@ export const useGame = create<GameState>((set, get) => ({
   setLocalPlayers: (localPlayers, sessionCode = '') => set({ localPlayers: localPlayers.slice(0, 3), sessionCode }),
 }));
 
-export function autoBuild(inv: InvItem[]): CarBuild {
+export function autoBuild(inv: InvItem[], characterId?: string): CarBuild {
+  const charId = characterId ?? CHARACTERS[0].id;
+  const items = itemsMap(inv);
+  const scoreOf = (b: CarBuild): number => {
+    const s = computeSpec(b, items, charId);
+    return s.maxSpeed + s.paintWidth * 4 + s.accel * 0.3 + s.grip * 1.5 + s.boostPower * 6;
+  };
   const build = emptyBuild();
   const used = new Set<number>();
-  const gradeRank = { common: 0, rare: 1, epic: 2, legend: 3 } as const;
+  // 바퀴: 탐욕적으로 가장 점수가 오르는 바퀴를 최대 4개까지 추가
+  const wheelPool = inv.filter((i) => ITEMS[i.itemId]?.cat === 'wheel');
+  for (let k = 0; k < 4; k++) {
+    const baseScore = scoreOf(build);
+    let best: InvItem | null = null;
+    let bestScore = -Infinity;
+    for (const cand of wheelPool) {
+      if (used.has(cand.uid)) continue;
+      const emptyIdx = build.wheels.indexOf(null);
+      if (emptyIdx < 0) break;
+      build.wheels[emptyIdx] = cand.uid;
+      const sc = scoreOf(build);
+      if (sc > bestScore) { bestScore = sc; best = cand; }
+      build.wheels[emptyIdx] = null;
+    }
+    if (best && bestScore > baseScore) {
+      const emptyIdx = build.wheels.indexOf(null);
+      build.wheels[emptyIdx] = best.uid;
+      used.add(best.uid);
+    } else break;
+  }
   (Object.keys(SLOT_CATEGORY) as Slot[]).forEach((slot) => {
     const cat = SLOT_CATEGORY[slot];
-    // 같은 카테고리가 여러 개면 가장 좋은 것(붓은 가장 넓은 것, 그 외는 최고 등급)을 자동 선택
     const candidates = inv.filter((i) => !used.has(i.uid) && ITEMS[i.itemId]?.cat === cat);
-    candidates.sort((a, b) => {
-      const A = ITEMS[a.itemId], B = ITEMS[b.itemId];
-      if (cat === 'brush') return (B.paintWidth ?? 0) - (A.paintWidth ?? 0);
-      return gradeRank[B.grade] - gradeRank[A.grade];
-    });
-    const found = candidates[0];
-    if (found) { used.add(found.uid); build.slots[slot] = found.uid; }
+    if (!candidates.length) return;
+    let best: InvItem | null = null;
+    let bestScore = -Infinity;
+    for (const cand of candidates) {
+      const prev = build.slots[slot];
+      build.slots[slot] = cand.uid;
+      const sc = scoreOf(build);
+      if (sc > bestScore) { bestScore = sc; best = cand; }
+      if (prev === undefined) delete build.slots[slot];
+      else build.slots[slot] = prev;
+    }
+    if (best) { used.add(best.uid); build.slots[slot] = best.uid; }
   });
-  const wheels = inv.filter((i) => ITEMS[i.itemId]?.cat === 'wheel').slice(0, 4);
-  wheels.sort((a, b) => (ITEMS[a.itemId].radius ?? 0) - (ITEMS[b.itemId].radius ?? 0));
-  wheels.forEach((w, i) => { build.wheels[i] = w.uid; });
   return build;
 }
 export function itemsMap(inv: InvItem[]): Record<number, string> {

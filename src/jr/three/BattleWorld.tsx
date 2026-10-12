@@ -12,7 +12,7 @@ import { sfx } from '../game/audio';
 import { computeSpec, newVehicleState, stepVehicle, type VehicleState, type VehicleSpec, type Control } from '../game/vehicle';
 import { TerritoryMap } from '../game/paint';
 import { paintSnapshot } from '../game/paintView';
-import { BATTLE_DURATION, HALF, STARTS, ARENA_OBSTACLES, BOOST_PADS, ITEM_SPOTS, JUMP_PADS, arenaHeight, blocked, insideArena, clampArena, pushBarrier, findPath, segmentClear } from '../game/battleMap';
+import { BATTLE_DURATION, HALF, STARTS, ARENA_OBSTACLES, BOOST_PADS, ITEM_SPOTS, REPAIRS, REPAIR_COOLDOWN, BREAKABLES, BREAKABLE_RESPAWN, arenaHeight, overpassDeckHeight, blocked, insideArena, clampArena, pushBarrier, findPath, segmentClear, getDriveSurface, rampTakeoff, RAMP_TAKEOFF_VY, LAND_TURBO_TIME } from '../game/battleMap';
 import { type RaceItem } from '../game/scrap';
 import { Car } from './Car';
 import { BattleArena } from './BattleArena';
@@ -49,6 +49,7 @@ interface Actor {
   usedPress: number; usedJump: number; jumps: number; boosts: number; itemsUsed: number; padCd: number; itemCd: number; wide: number;
   target: [number, number]; path: [number, number][]; retarget: number; stuck: number; reverse: number;
   previousX: number; previousZ: number; jumpCd: number; wasAir: boolean; spin: number;
+  surfId: import('../game/battleMap').SurfaceId; rampAir: boolean;
   /** 현재 부품 내구도에 쌓인 데미지 — spec.partHp 이상이면 부품 1개가 빠진다 */
   /** 페인트 소유자 번호 — 개인전은 자기 번호, 팀전은 팀 번호 */
   own: number; team?: number;
@@ -60,7 +61,7 @@ interface GroundPart { uid: number; itemId: string; level: number; x: number; y:
 const MAX_GROUND_PARTS = 24;
 /** 종이박스: 주기적으로 리스폰되고, 총/충돌로 부수면 랜덤 자동차 부품이 튀어나온다 */
 interface CrateBox { uid: number; x: number; y: number; z: number; vy: number; hp: number; maxHp: number; hit: number; seed: number }
-const MAX_CRATES = 6, CRATE_HP = 36, CRATE_RESPAWN = 3.2;
+const MAX_CRATES = 8, CRATE_HP = 36, CRATE_RESPAWN = 3.2;
 
 /** '?' 가 적힌 페인트통 텍스처 */
 function useQuestionBucketTexture() {
@@ -97,6 +98,21 @@ function CrateView({ crate }: { crate: CrateBox }) {
     <mesh position={[0, 0.7, -0.71]}><boxGeometry args={[0.34, 1.42, 0.03]} /><meshStandardMaterial color="#ecd9a8" roughness={0.6} /></mesh>
     <mesh position={[0.36, 0.55, 0.715]}><boxGeometry args={[0.46, 0.3, 0.02]} /><meshStandardMaterial color="#fff6e0" /></mesh>
     <mesh position={[-0.42, 1.36, 0.0]} rotation={[0, 0, 0.5]}><boxGeometry args={[0.7, 0.04, 0.5]} /><meshStandardMaterial color="#b98a52" roughness={0.9} /></mesh>
+  </group>;
+}
+function PileView({ pile }: { pile: { x: number; z: number; hp: number; cd: number; seed: number } }) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const g = ref.current; if (!g) return;
+    const regrow = pile.cd > 0 ? Math.max(0.001, 1 - pile.cd / BREAKABLE_RESPAWN) : 1;
+    g.visible = regrow > 0.05;
+    g.scale.set(regrow, regrow, regrow);
+    g.rotation.y = pile.seed;
+  });
+  return <group ref={ref}>
+    <mesh position={[0, 0.35, 0]} castShadow receiveShadow><boxGeometry args={[3.6, 0.7, 3.6]} /><meshStandardMaterial color="#d9c9a8" roughness={0.95} /></mesh>
+    <mesh position={[0.4, 0.85, -0.3]} rotation={[0, 0.4, 0.06]} castShadow><boxGeometry args={[2.4, 0.5, 1.8]} /><meshStandardMaterial color="#c9b489" roughness={0.95} /></mesh>
+    <mesh position={[-0.7, 0.8, 0.5]} rotation={[0, -0.3, -0.05]} castShadow><boxGeometry args={[1.6, 0.45, 1.4]} /><meshStandardMaterial color="#e2d4b2" roughness={0.95} /></mesh>
   </group>;
 }
 
@@ -267,6 +283,7 @@ export function BattleWorld() {
         jumps: 0, boosts: 0, itemsUsed: 0, padCd: 0, itemCd: 4 + i, wide: 0,
         target: [0, 0], path: [], retarget: 0, stuck: 0, reverse: 0,
         previousX: start.x, previousZ: start.z, jumpCd: 0, wasAir: false, spin: 0,
+        surfId: 'ground', rampAir: false,
       };
     });
     const paint = new TerritoryMap(teamMode ? [TEAM_COLORS[0], TEAM_COLORS[1]] : colors);
@@ -275,6 +292,8 @@ export function BattleWorld() {
       droplets: Array.from({ length: 320 }, (): Droplet => ({ x: 0, y: -100, z: 0, vx: 0, vy: 0, vz: 0, life: 0, scale: 0, color: '#ffffff' })),
       dropIndex: 0, fxT: 0, scoreT: 0, beep: 4,
       capsules: ITEM_SPOTS.map(([x, z]) => ({ x, z, cooldown: 0 })),
+      repairs: REPAIRS.map((r) => ({ x: r.x, z: r.z, cd: 0 })),
+      piles: BREAKABLES.map((b) => ({ x: b.x, z: b.z, hp: 22, cd: 0, seed: Math.random() * 6.28 })),
       missiles: Array.from({ length: 6 }, (): Missile => ({ active: false, x: 0, y: 0, z: 0, heading: 0, owner: 0, target: 0, life: 0 })),
       bullets: Array.from({ length: 140 }, (): Bullet => ({ active: false, x: 0, y: -100, z: 0, vx: 0, vz: 0, life: 0, owner: 0, damage: 0, splash: 0, color: '#fff' })),
       bulletIndex: 0,
@@ -294,7 +313,7 @@ export function BattleWorld() {
     const online = useGame.getState().online;
     if (online) startNetSync(online.code, online.playerId, () => {
       const a = sim.actors[0], st = a.st;
-      return { x: st.x, y: st.y, z: st.z, heading: st.heading, speed: st.speed, steer: st.steer, shield: st.shield,
+      return { x: st.x, y: st.y, z: st.z, heading: st.heading, speed: st.speed, steer: st.steer, shield: st.shield, surfId: a.surfId,
         firing: sim.localFiring && battleHUD.phase === 'play', phase: battleHUD.phase === 'finished' ? 'done' : 'battle', build: a.racer.build, items: a.racer.items };
     });
     return () => { stopNetSync(); sfx.engineOff(); battleHUD.paint = null; sim.paint.dispose(); resetInput(); };
@@ -313,11 +332,25 @@ export function BattleWorld() {
       if (!insideArena(x, z, 3) || blocked(x, z, 2.5)) continue;
       if (sim.actors.some((a) => Math.hypot(a.st.x - x, a.st.z - z) < 7)) continue;
       if (sim.crates.some((o) => Math.hypot(o.x - x, o.z - z) < 6)) continue;
+      if (sim.piles.some((o) => Math.hypot(o.x - x, o.z - z) < 6)) continue;
+      if (sim.repairs.some((o) => Math.hypot(o.x - x, o.z - z) < 5)) continue;
       sim.crates.push({ uid: sim.crateUid++, x, y: arenaHeight(x, z) + 9, z, vy: 0, hp: CRATE_HP, maxHp: CRATE_HP, hit: 0, seed: Math.random() * 6.28 });
       bump(); return;
     }
   }
-  /** 박스를 부수면 랜덤 자동차 부품이 1~2개 튀어나온다 */
+  /** 05 파괴 폐품: 고정 2곳, 속도/부스트로 부서짐. 큰 감속 없이 파편 연출, 보상 1개. 12초 후 재생.
+   * 권한: 파괴자 클라이언트가 판정·보상 생성. 드롭 랜덤은 기기별 상이 (별도 동기화 과제). */
+  const PILE_HP = 22;
+  function breakPile(pi: number, by: number) {
+    const p = sim.piles[pi];
+    p.cd = BREAKABLE_RESPAWN; p.hp = PILE_HP;
+    const ang = Math.random() * Math.PI * 2, def = rollPart();
+    if (sim.ground.length >= MAX_GROUND_PARTS) sim.ground.shift();
+    sim.ground.push({ uid: sim.partUid++, itemId: def.itemId, level: 0, x: p.x, y: arenaHeight(p.x, p.z) + 1, z: p.z, vx: Math.cos(ang) * 4.5, vy: 7 + Math.random() * 2, vz: Math.sin(ang) * 4.5, spin: 0, cd: 0.45, from: -1, age: 0 });
+    emit(p.x, arenaHeight(p.x, p.z) + 0.8, p.z, '#d9c9a8', 20, 5);
+    if (by === battleHUD.focus || Math.hypot(sim.actors[battleHUD.focus].st.x - p.x, sim.actors[battleHUD.focus].st.z - p.z) < 16) sfx.smash();
+    bump();
+  }
   function breakCrate(crate: CrateBox, by: number) {
     const idx = sim.crates.indexOf(crate); if (idx < 0) return;
     sim.crates.splice(idx, 1);
@@ -384,6 +417,7 @@ export function BattleWorld() {
     return true;
   }
   function damage(index: number, amount: number, from: number) {
+    // 권한: 피해자 클라이언트가 자신의 피해를 판정. 원격 퍼펫은 본인 기기 계산을 덮어쓰지 않는다.
     const a = sim.actors[index];
     if (battleHUD.phase !== 'play') return;
     if (from >= 0 && isAlly(index, from)) return; // 아군 사격/충돌은 피해 없음 (환경 피해 from=-1 제외)
@@ -469,10 +503,14 @@ export function BattleWorld() {
       const score = value / (7 + d * 0.5) + Math.random() * 0.07;
       if (score > best) { best = score; target = [x, z]; }
     }
-    // 봇도 종이박스를 노려서 부품을 얻는다
-    if (sim.crates.length && Math.random() < 0.4) {
+    // 봇도 종이박스/파괴 폐품을 노려서 부품을 얻는다
+    if (Math.random() < 0.4) {
       let bd = Infinity;
       for (const c of sim.crates) { const d = Math.hypot(c.x - a.st.x, c.z - a.st.z); if (d < bd) { bd = d; target = [c.x, c.z]; } }
+      for (const p of sim.piles) {
+        if (p.cd > 0) continue;
+        const d = Math.hypot(p.x - a.st.x, p.z - a.st.z); if (d < bd) { bd = d; target = [p.x, p.z]; }
+      }
     }
     a.target = target;
     a.path = segmentClear(a.st.x, a.st.z, ...target) ? [target] : findPath(a.st.x, a.st.z, ...target);
@@ -544,6 +582,7 @@ export function BattleWorld() {
     });
     if (playing) {
       sim.capsules.forEach((c) => { c.cooldown = Math.max(0, c.cooldown - dt); });
+      sim.repairs.forEach((r) => { r.cd = Math.max(0, r.cd - dt); });
       sim.fxT += dt;
       sim.actors.forEach((a, i) => {
         const st = a.st;
@@ -557,14 +596,18 @@ export function BattleWorld() {
           let dh = remote.heading - st.heading;
           while (dh > Math.PI) dh -= Math.PI * 2; while (dh < -Math.PI) dh += Math.PI * 2;
           st.heading += dh * k; st.speed = remote.speed; st.steer = remote.steer; st.shield = remote.shield;
-          st.airborne = remote.y > arenaHeight(st.x, st.z) + 0.25;
+          // 권한: 표면은 주행 클라이언트 판정을 따르고, 데크 위는 공중·도색에서 제외
+          const remoteSurf = remote.surfId ?? (remote.y > 2.5 && overpassDeckHeight(st.x, st.z) > 0.5 ? 'deck' : 'ground');
+          a.surfId = remoteSurf as typeof a.surfId;
+          const remoteFloor = Math.max(arenaHeight(st.x, st.z), remoteSurf === 'deck' ? overpassDeckHeight(st.x, st.z) : 0);
+          st.airborne = remote.y > remoteFloor + 0.45;
           if (remote.build && remote.items) {
             const key = JSON.stringify(remote.build) + Object.keys(remote.items).length;
             if (key !== a.netBuildKey) { a.netBuildKey = key; applyBuild(i, remote.build, remote.items); }
           }
           a.fireCd -= dt;
           if (remote.firing && a.fireCd <= 0) fire(i);
-          if (!st.airborne && Math.abs(st.speed) > 0.7 && Math.hypot(st.x - startX, st.z - startZ) > 0.012) sim.paint.stroke(a.own, st.x, st.z, Math.abs(st.speed), a.wide > 0, a.spec.paintWidth, i);
+          if (!st.airborne && a.surfId !== 'deck' && Math.abs(st.speed) > 0.7 && Math.hypot(st.x - startX, st.z - startZ) > 0.012) sim.paint.stroke(a.own, st.x, st.z, Math.abs(st.speed), a.wide > 0, a.spec.paintWidth, i);
           else sim.paint.resetTrail(i);
           return;
         }
@@ -613,12 +656,16 @@ export function BattleWorld() {
         if (i === 0) sim.localFiring = Boolean(ctrl.fire);
         if (ctrl.fire && a.fireCd <= 0) fire(i);
         a.padCd -= dt; a.jumpCd -= dt; a.wide = Math.max(0, a.wide - dt); a.wallHitCd = Math.max(0, a.wallHitCd - dt);
-        const ground = arenaHeight(st.x, st.z), owner = sim.paint.ownerAt(st.x, st.z);
-        const friction = owner < 0 ? 1 : owner === a.own ? 1.03 : 0.94;
-        const jump = JUMP_PADS.some((p) => Math.hypot(p.x - st.x, p.z - st.z) < 1.5) && a.jumpCd <= 0;
+        const surf = getDriveSurface(st.x, st.z, st.y, a.surfId);
+        a.surfId = surf.id;
+        const ground = surf.ground, owner = sim.paint.ownerAt(st.x, st.z);
+        const friction = (owner < 0 ? 1 : owner === a.own ? 1.03 : 0.94) * surf.friction;
+        const edge = !st.airborne && a.jumpCd <= 0 ? rampTakeoff(a.previousX, a.previousZ, st.x, st.z) : null;
+        const rampJump = edge !== null && Math.abs(st.speed) > 4 && st.y < ground + 0.6;
         const boostBefore = st.boostTime;
         const speedBefore = st.speed;
-        stepVehicle(st, a.spec, ctrl, dt, { friction, ground, jumpImpulse: jump ? 9.5 : undefined }, ARENA_OBSTACLES);
+        stepVehicle(st, a.spec, ctrl, dt, { friction, ground, jumpImpulse: rampJump ? RAMP_TAKEOFF_VY : undefined }, ARENA_OBSTACLES);
+        if (rampJump && st.airborne) a.rampAir = true;
 
         // ── 마리오카트 미니터보 발동 및 스파크 이펙트 ──
         if (st.turboRelease > 0) {
@@ -682,7 +729,13 @@ export function BattleWorld() {
         }
         // 점프대로 떠오른 경우에만 긴 쿨다운 — 수동 점프는 자체 쿨다운(0.55초)을 유지한다
         if (st.airborne && !a.wasAir && a.jumpCd <= 0) { a.jumpCd = 1.3; if (i === battleHUD.focus) sfx.jump(); }
-        if (!st.airborne && a.wasAir) { sim.paint.splash(a.own, st.x, st.z, 2.2); emit(st.x, st.y + 0.15, st.z, a.color, 12); if (i === battleHUD.focus) sfx.land(); }
+        if (!st.airborne && a.wasAir) {
+          sim.paint.splash(a.own, st.x, st.z, 2.2); emit(st.x, st.y + 0.15, st.z, a.color, 12); if (i === battleHUD.focus) sfx.land();
+          if (a.rampAir) {
+            a.rampAir = false;
+            if (ctrl.throttle > 0.05) st.itemBoost = Math.max(st.itemBoost, LAND_TURBO_TIME);
+          }
+        }
         a.wasAir = st.airborne;
         for (const p of BOOST_PADS) {
           if (a.padCd <= 0 && !st.airborne && ctrl.throttle > 0 && Math.hypot(st.x - p.x, st.z - p.z) < 1.8) {
@@ -694,8 +747,34 @@ export function BattleWorld() {
           a.items.push(pool[Math.floor(Math.random() * pool.length)]); c.cooldown = 6;
           if (i === battleHUD.focus) { sfx.item(); notify('아이템 획득'); }
         }
-        const grounded = !st.airborne && Math.abs(st.y - arenaHeight(st.x, st.z)) < 0.45;
-        if (grounded && Math.abs(st.speed) > 0.7 && Math.hypot(st.x - startX, st.z - startZ) > 0.012) {
+        // 06 수리지점: 길 옆 트리거 통과 시 바퀴 1개 복구 또는 누적 피해 50% 완화. 지점별 10초 대기.
+        for (const r of sim.repairs) {
+          if (r.cd > 0 || st.airborne) continue;
+          if (Math.hypot(st.x - r.x, st.z - r.z) > 2.4) continue;
+          const build = a.racer.build;
+          const empty = build.wheels.findIndex((w) => w === null);
+          if (empty >= 0) {
+            const items = { ...a.racer.items };
+            const wheels = [...build.wheels];
+            const uid = sim.partUid++;
+            items[uid] = 'cap';
+            wheels[empty] = uid;
+            r.cd = REPAIR_COOLDOWN;
+            applyBuild(i, { slots: { ...build.slots }, wheels, upgrades: { ...(build.upgrades ?? {}) } }, items, '🔧 기본 바퀴 복구!');
+            emit(st.x, st.y + 1, st.z, '#7fd8a0', 16, 4);
+            if (i === battleHUD.focus) sfx.item();
+          } else if (a.dmg > 1) {
+            a.dmg *= 0.5;
+            r.cd = REPAIR_COOLDOWN;
+            if (i === battleHUD.focus) notify('🔧 누적 피해 완화!');
+            emit(st.x, st.y + 1, st.z, '#7fd8a0', 12, 4);
+            if (i === battleHUD.focus) sfx.item();
+          }
+        }
+        const grounded = !st.airborne && Math.abs(st.y - ground) < 0.45;
+        // C1: 고가 상부 도색은 비활성화. 하부와 한 셀에 겹쳐 쓰지 않는다. HUD 규칙은 별도 명시 예정.
+        const paintableSurface = surf.id !== 'deck';
+        if (grounded && paintableSurface && Math.abs(st.speed) > 0.7 && Math.hypot(st.x - startX, st.z - startZ) > 0.012) {
           sim.paint.stroke(a.own, st.x, st.z, Math.abs(st.speed), a.wide > 0, a.spec.paintWidth, i);
           if (sim.fxT > 0.06) emit(st.x - Math.sin(st.heading), st.y + 0.3, st.z - Math.cos(st.heading), a.color, 2, 1.8);
         } else sim.paint.resetTrail(i);
@@ -720,6 +799,17 @@ export function BattleWorld() {
           }
         }
         if (hitCrate) return;
+        for (let pi = 0; pi < sim.piles.length; pi++) {
+          const p = sim.piles[pi];
+          if (p.cd > 0) continue;
+          if (Math.hypot(p.x - b.x, p.z - b.z) < 2 && b.y < arenaHeight(p.x, p.z) + 1.8) {
+            b.active = false;
+            p.hp -= Math.max(b.damage, 6);
+            emit(b.x, b.y, b.z, '#d9c9a8', 5, 3);
+            if (p.hp <= 0) breakPile(pi, b.owner);
+            break;
+          }
+        }
         for (let k = 0; k < sim.actors.length; k++) {
           if (k === b.owner || isAlly(k, b.owner)) continue;
           const t = sim.actors[k].st;
@@ -752,6 +842,24 @@ export function BattleWorld() {
           if (Math.hypot(t.x - c.x, t.z - c.z) < 1.9 && Math.abs(t.y - c.y) < 1.6 && Math.abs(t.speed) > 4.5) {
             c.hp -= 24 + Math.abs(t.speed) * 1.2; c.hit = 1; t.speed *= 0.82;
             if (c.hp <= 0) { breakCrate(c, k); break; }
+          }
+        }
+      }
+      // 05 파괴 폐품: 속도/부스트로 부서짐. 큰 감속 없이 파편 연출. 쿨다운 후 재생.
+      for (let pi = 0; pi < sim.piles.length; pi++) {
+        const p = sim.piles[pi];
+        if (p.cd > 0) { p.cd -= dt; continue; }
+        for (let k = 0; k < sim.actors.length; k++) {
+          const ak = sim.actors[k], t = ak.st;
+          if (ak.netId && freshRemote(ak.netId)) continue;
+          if (Math.hypot(t.x - p.x, t.z - p.z) < 2.2 && Math.abs(t.y - arenaHeight(p.x, p.z)) < 1.6) {
+            const boosting = t.boostTime > 0 || t.itemBoost > 0;
+            if (Math.abs(t.speed) > 3 || boosting) {
+              p.hp -= 10 + Math.abs(t.speed) * 1.1 + (boosting ? 8 : 0);
+              t.speed *= 0.95;
+              emit(t.x, t.y + 0.6, t.z, '#d9c9a8', 6, 3);
+              if (p.hp <= 0) { breakPile(pi, k); break; }
+            }
           }
         }
       }
@@ -872,6 +980,10 @@ export function BattleWorld() {
     <Pickups capsules={sim.capsules} missiles={sim.missiles} />
     <Bullets bullets={sim.bullets} />
     {sim.crates.map((c) => <CrateView key={c.uid} crate={c} />)}
+    {sim.piles.map((p, pi) => <group key={`pile-${pi}`} position={[p.x, arenaHeight(p.x, p.z), p.z]}><PileView pile={p} /></group>)}
+    {sim.repairs.map((r, ri) => <group key={`repair-fx-${ri}`} position={[r.x, 2.6, r.z]}>
+      <mesh><sphereGeometry args={[0.22, 10, 8]} /><meshBasicMaterial color={r.cd > 0 ? '#5a6a62' : '#7dffb0'} toneMapped={false} /></mesh>
+    </group>)}
     {sim.ground.map((g) => <GroundPartView key={g.uid} part={g} />)}
     {sim.actors.map((a, i) => <group key={a.racer.id}>
       <Car build={a.racer.build} items={a.racer.items} characterId={a.racer.characterId} jersey={a.color} stateRef={actorRefs[i]} />
