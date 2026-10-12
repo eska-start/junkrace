@@ -3,6 +3,7 @@ import { CHARACTERS, ITEMS, type Category } from './data/items';
 import type { Loadout, ScrapStats } from './game/scrap';
 import { computeSpec } from './game/vehicle';
 
+export type CameraMode = 'overview' | 'chase';
 export type GameMode = 'ffa' | 'team';
 export const MODE_LABEL: Record<GameMode, string> = { ffa: '개인전', team: '2:2 팀전' };
 export const TEAM_LABEL = ['A팀', 'B팀'];
@@ -67,7 +68,12 @@ function saveGarage(garage: Garage) {
   try { localStorage.setItem('junk-racers-garage', JSON.stringify(garage)); } catch { /* Storage is optional. */ }
 }
 
+function loadCameraMode(): CameraMode {
+  try { return localStorage.getItem('junk-racers-camera') === 'chase' ? 'chase' : 'overview'; } catch { return 'overview'; }
+}
+
 interface GameState {
+  cameraMode: CameraMode; setCameraMode: (mode: CameraMode) => void;
   phase: Phase; round: number; characterId: string; paintColor: string;
   inventory: InvItem[]; build: CarBuild; bots: Racer[]; results: BattleResultEntry[];
   nextUid: number; scrapSummary: ScrapSummary | null; loadout: Loadout | null; resultMap: string | null;
@@ -86,6 +92,11 @@ interface GameState {
 }
 
 export const useGame = create<GameState>((set, get) => ({
+  cameraMode: loadCameraMode(),
+  setCameraMode: (cameraMode) => {
+    try { localStorage.setItem('junk-racers-camera', cameraMode); } catch { /* Storage is optional. */ }
+    set({ cameraMode });
+  },
   phase: 'select', round: 1, characterId: CHARACTERS[0].id, paintColor: PLAYER_COLORS[0],
   inventory: [], build: emptyBuild(), bots: [], results: [], nextUid: 1,
   scrapSummary: null, loadout: null, resultMap: null, garage: loadGarage(), localPlayers: [], sessionCode: '', online: null, gameMode: loadMode(),

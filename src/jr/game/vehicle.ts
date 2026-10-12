@@ -428,11 +428,11 @@ export function stepVehicle(
   }
 
   // vertical
-  if (st.y > surface.ground + 0.2) st.airborne = true;
   if (surface.jumpImpulse && !st.airborne && st.speed > 4) {
     st.vy = surface.jumpImpulse * spec.jump * Math.min(1, st.speed / 12);
     st.airborne = true;
   }
+  if (st.y > surface.ground + 0.2) st.airborne = true;
   if (st.airborne || st.y > surface.ground + 0.01) {
     st.vy -= 28 * dt;
     st.y += st.vy * dt;

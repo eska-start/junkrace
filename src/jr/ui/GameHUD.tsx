@@ -66,6 +66,13 @@ function TerritoryMinimap() {
   });
   return <div className="jr-territory-map"><canvas ref={ref} width={180} height={180} aria-label="현재 페인트 영역 지도" /><span>고물 공방 · 고가 제외</span></div>;
 }
+function CameraSelector() {
+  const mode = useGame(s => s.cameraMode), setMode = useGame(s => s.setCameraMode);
+  return <div className="jr-camera-selector" role="group" aria-label="주행 시점 선택">
+    <button type="button" aria-pressed={mode === 'overview'} onClick={() => setMode('overview')}>탑뷰</button>
+    <button type="button" aria-pressed={mode === 'chase'} onClick={() => setMode('chase')}>후방뷰</button>
+  </div>;
+}
 export function BattleHUD() {
   useRefresh();
   const h = battleHUD, me = h.scores[h.focus] ?? h.scores[0];
@@ -75,7 +82,7 @@ export function BattleHUD() {
   const item = h.item ? BATTLE_ITEMS[h.item] : null;
   return <div className="ui jr-game-hud jr-battle-hud">
     <header className="jr-hud-top">
-      <div className="jr-hud-left"><HomeButton /><span className="jr-hud-stage">03 / 고물 공방 영역전</span></div>
+      <div className="jr-hud-left"><HomeButton /><CameraSelector /><span className="jr-hud-stage">고물 공방</span></div>
       <div className={`jr-round-timer ${h.remaining <= 10 && !ready ? 'urgent' : ''}`}><span>페인트 배틀</span><strong>{time}</strong><small>남은 시간</small></div>
       <div className="jr-own-territory" style={{ color: me?.color ?? '#f56a87' }}><GameIcon name="paint" size={23} /><div><small>{h.mode === 'team' ? `${TEAM_LABEL[h.myTeam]}이 칠한 영역` : '내 색으로 칠한 영역'}</small><strong>{((me?.paint ?? 0) * 100).toFixed(1)}<span>%</span></strong></div></div>
     </header>
