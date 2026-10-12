@@ -12,7 +12,7 @@ import { sfx } from '../game/audio';
 import { computeSpec, newVehicleState, stepVehicle, type VehicleState, type VehicleSpec, type Control } from '../game/vehicle';
 import { TerritoryMap } from '../game/paint';
 import { paintSnapshot } from '../game/paintView';
-import { BATTLE_DURATION, HALF, STARTS, ARENA_OBSTACLES, BOOST_PADS, ITEM_SPOTS, REPAIRS, REPAIR_COOLDOWN, BREAKABLES, BREAKABLE_RESPAWN, arenaHeight, overpassDeckHeight, blocked, insideArena, clampArena, pushBarrier, findPath, segmentClear, getDriveSurface, rampTakeoff, RAMP_TAKEOFF_VY, LAND_TURBO_TIME } from '../game/battleMap';
+import { BATTLE_DURATION, HALF, STARTS, ARENA_OBSTACLES, BOOST_PADS, ITEM_SPOTS, REPAIRS, REPAIR_COOLDOWN, BREAKABLES, BREAKABLE_RESPAWN, arenaHeight, overpassDeckHeight, blocked, insideArena, clampArena, pushBarrier, findPath, segmentClear, getDriveSurface, rampTakeoff, RAMP_TAKEOFF_VY, LAND_TURBO_TIME, clearCameraBoom } from '../game/battleMap';
 import { type RaceItem } from '../game/scrap';
 import { Car } from './Car';
 import { BattleArena } from './BattleArena';
@@ -529,7 +529,6 @@ export function BattleWorld() {
     if (a.stuck > 0.8) { a.reverse = 0.65; a.stuck = 0; a.retarget = 0; }
     a.reverse = Math.max(0, a.reverse - dt);
     const reversing = a.reverse > 0;
-    a.previousX = a.st.x; a.previousZ = a.st.z;
     const steer = Math.max(-1, Math.min(1, -d * 1.8)) * (reversing ? -1 : 1);
     const sharpCorner = Math.abs(d) > 0.52 && a.st.speed > 5.2 && !a.st.airborne && !reversing;
     const botHop = sharpCorner && a.st.driftDir === 0 && a.jumpCd <= 0;
@@ -661,9 +660,10 @@ export function BattleWorld() {
         const ground = surf.ground, owner = sim.paint.ownerAt(st.x, st.z);
         const friction = (owner < 0 ? 1 : owner === a.own ? 1.03 : 0.94) * surf.friction;
         const edge = !st.airborne && a.jumpCd <= 0 ? rampTakeoff(a.previousX, a.previousZ, st.x, st.z) : null;
-        const rampJump = edge !== null && Math.abs(st.speed) > 4 && st.y < ground + 0.6;
+        const rampJump = edge !== null && Math.abs(st.speed) > 4 && st.y <= 2.6;
         const boostBefore = st.boostTime;
         const speedBefore = st.speed;
+        a.previousX = st.x; a.previousZ = st.z;
         stepVehicle(st, a.spec, ctrl, dt, { friction, ground, jumpImpulse: rampJump ? RAMP_TAKEOFF_VY : undefined }, ARENA_OBSTACLES);
         if (rampJump && st.airborne) a.rampAir = true;
 
@@ -694,13 +694,14 @@ export function BattleWorld() {
 
         if (!st.airborne) {
           const fx = Math.sin(st.heading), fz = Math.cos(st.heading);
-          const pitch = -Math.atan2(arenaHeight(st.x + fx * 0.7, st.z + fz * 0.7) - arenaHeight(st.x - fx * 0.7, st.z - fz * 0.7), 1.4);
-          const roll = Math.atan2(arenaHeight(st.x + fz * 0.7, st.z - fx * 0.7) - arenaHeight(st.x - fz * 0.7, st.z + fx * 0.7), 1.4);
+          const heightAt = a.surfId === 'deck' ? overpassDeckHeight : arenaHeight;
+          const pitch = -Math.atan2(heightAt(st.x + fx * 0.7, st.z + fz * 0.7) - heightAt(st.x - fx * 0.7, st.z - fz * 0.7), 1.4);
+          const roll = Math.atan2(heightAt(st.x + fz * 0.7, st.z - fx * 0.7) - heightAt(st.x - fz * 0.7, st.z + fx * 0.7), 1.4);
           st.pitch += (pitch - st.pitch) * Math.min(1, dt * 6);
           st.roll += (roll - st.roll) * Math.min(1, dt * 4);
         }
         if (st.boostTime > boostBefore) { a.boosts++; if (i === battleHUD.focus) sfx.boost(); }
-        const hitBarrier = st.y < 1.3 && pushBarrier(st, a.spec.onFoot ? 0.65 : 1.05);
+        const hitBarrier = st.y < 3.8 && pushBarrier(st, a.spec.onFoot ? 0.65 : 1.05);
         const unclampedX = st.x, unclampedZ = st.z;
         clampArena(st);
         const hitOuterWall = Math.hypot(st.x - unclampedX, st.z - unclampedZ) > 0.01;
@@ -730,7 +731,7 @@ export function BattleWorld() {
         // 점프대로 떠오른 경우에만 긴 쿨다운 — 수동 점프는 자체 쿨다운(0.55초)을 유지한다
         if (st.airborne && !a.wasAir && a.jumpCd <= 0) { a.jumpCd = 1.3; if (i === battleHUD.focus) sfx.jump(); }
         if (!st.airborne && a.wasAir) {
-          sim.paint.splash(a.own, st.x, st.z, 2.2); emit(st.x, st.y + 0.15, st.z, a.color, 12); if (i === battleHUD.focus) sfx.land();
+          if (a.surfId !== 'deck') sim.paint.splash(a.own, st.x, st.z, 2.2); emit(st.x, st.y + 0.15, st.z, a.color, 12); if (i === battleHUD.focus) sfx.land();
           if (a.rampAir) {
             a.rampAir = false;
             if (ctrl.throttle > 0.05) st.itemBoost = Math.max(st.itemBoost, LAND_TURBO_TIME);
@@ -966,12 +967,17 @@ export function BattleWorld() {
     battleHUD.statSpeed = focused.spec.maxSpeed; battleHUD.statAccel = focused.spec.accel; battleHUD.statGrip = focused.spec.grip;
     sfx.engine(playing ? Math.min(1, Math.abs(p.speed) / 25) : 0, p.boostTime > 0 || p.itemBoost > 0);
     const fx = Math.sin(p.heading), fz = Math.cos(p.heading), portrait = size.width / size.height < 0.8;
-    const back = portrait ? 17 : 13.5, up = portrait ? 15 : 11.5;
+    const chase = useGame.getState().cameraMode === 'chase';
+    const back = chase ? (portrait ? 10.5 : 9) : (portrait ? 17 : 13.5);
+    const up = chase ? (portrait ? 5.2 : 4.3) : (portrait ? 15 : 11.5);
     const k = 1 - Math.exp(-dt * 4);
-    camera.position.lerp(new THREE.Vector3(p.x - fx * back, up + p.y * 0.7, p.z - fz * back), k);
+    camera.position.lerp(new THREE.Vector3(p.x - fx * back, up + p.y * (chase ? 1 : 0.7), p.z - fz * back), k);
+    const safeCamera = clearCameraBoom({ x: p.x, y: p.y + 1.2, z: p.z }, camera.position);
+    camera.position.set(safeCamera.x, safeCamera.y, safeCamera.z);
     sim.shake = Math.max(0, sim.shake - dt * 2);
     const sh = sim.shake * 0.35;
-    camera.lookAt(p.x + fx * 1.8 + (Math.random() - 0.5) * sh, 0.8 + p.y, p.z + fz * 1.8);
+    const ahead = chase ? 5 : 1.8;
+    camera.lookAt(p.x + fx * ahead + (Math.random() - 0.5) * sh, (chase ? 1.2 : .8) + p.y, p.z + fz * ahead);
     lightTarget.current.x = p.x; lightTarget.current.z = p.z;
   });
   return <group>

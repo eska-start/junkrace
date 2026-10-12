@@ -9,7 +9,10 @@ export const LOOP_RADIUS = 34;
 export const LOOP_WIDTH = 10;
 export interface Barrier { x: number; z: number; w: number; d: number; h: number }
 // 그레이박스 A: 내부를 벽으로 나누지 않는다. 중앙 광장 가장자리는 연결.
-export const BARRIERS: Barrier[] = [];
+export const BARRIERS: Barrier[] = [
+  // The supports sit outside an 8U clear east/west crossing.
+  ...[24.5, 31.5].flatMap(x => [-4.5, 4.5].map(z => ({ x, z, w: 0.7, d: 0.7, h: 4 }))),
+];
 export const ARENA_OBSTACLES: Obstacle[] = [];
 export const STARTS = [
   { x: -8, z: -8, heading: Math.PI * 0.25 }, { x: 8, z: -8, heading: -Math.PI * 0.25 },
@@ -38,11 +41,10 @@ export const OVERPASS = { x: 28, z: 0, w: 8, len: 32, deckY: 5, rampLen: 12, dec
 export function overpassDeckHeight(x: number, z: number): number {
   const dx = x - OVERPASS.x, dz = z - OVERPASS.z;
   if (Math.abs(dx) > OVERPASS.w / 2 || Math.abs(dz) > OVERPASS.len / 2) return 0;
-  const side = Math.min(1, Math.max(0, (OVERPASS.w / 2 - Math.abs(dx)) / 1.2));
   const az = Math.abs(dz);
   const deckHalf = OVERPASS.deckLen / 2;
   const t = az <= deckHalf ? 1 : Math.max(0, 1 - (az - deckHalf) / OVERPASS.rampLen);
-  return OVERPASS.deckY * t * side;
+  return OVERPASS.deckY * t;
 }
 export function underOverpass(x: number, z: number): boolean {
   const dx = x - OVERPASS.x, dz = z - OVERPASS.z;
@@ -69,13 +71,20 @@ export const REPAIRS = [
 ] as const;
 export const REPAIR_COOLDOWN = 10;
 export const BREAKABLE_RESPAWN = 12;
-function bankHeight(x: number, z: number): number {
+export function bankHeight(x: number, z: number): number {
   let h = 0;
   for (const b of BANKS) {
-    const d = Math.hypot(x - b.x, z - b.z);
-    if (d < 13 || d > 23) continue;
-    const t = (d - 13) / 10;
-    h = Math.max(h, 2 * t * t * (3 - 2 * t));
+    // Anchor is the middle of the bend, not the centre of a full ring.
+    const heading = b.heading * Math.PI / 180;
+    const ox = -Math.sin(heading), oz = -Math.cos(heading);
+    const cx = b.x - ox * 18, cz = b.z - oz * 18;
+    const dx = x - cx, dz = z - cz, d = Math.hypot(dx, dz);
+    const angle = Math.acos(Math.min(1, Math.max(-1, (dx * ox + dz * oz) / (d || 1))));
+    if (d < 13 || d > 24 || angle > Math.PI / 4) continue;
+    const t = Math.min(1, (d - 13) / 10);
+    const ends = Math.min(1, (Math.PI / 4 - angle) / 0.16);
+    const outside = Math.min(1, 24 - d);
+    h = Math.max(h, 2 * t * t * (3 - 2 * t) * ends * outside);
   }
   return h;
 }
@@ -99,59 +108,26 @@ function rampHeight(cx: number, cz: number, dir: 1 | -1, x: number, z: number): 
   const dx = x - cx, dz = z - cz;
   if (Math.abs(dx) > 4 || Math.abs(dz) > 6) return 0;
   const t = dir > 0 ? (dz + 6) / 12 : (6 - dz) / 12;
-  const side = Math.min(1, Math.max(0, (4 - Math.abs(dx)) / 1.5));
-  return 2 * Math.min(1, Math.max(0, t)) * side;
+  return 2 * Math.min(1, Math.max(0, t));
 }
-// 필수조건 1: 단일 arenaHeight 하나로 상하를 표현하지 않는다.
-// 이전 표면+현재 높이로 접촉면을 선택하고 하부 차량을 데크로 스냅하지 않는다.
-// 하부(y<2.5)는 지면 우선, 상부는 데크 유지. 접근 경사로를 타면 상부로 연결.
+// A low ramp entrance can acquire the deck; a car under its centre cannot.
+// Continuity follows the previous surface and actual height, including jump landings.
 export function getDriveSurface(x: number, z: number, currentY = 0, prevId: SurfaceId = 'ground'): DriveSurface {
-  const ha = rampHeight(-6, -31, 1, x, z);
-  const hb = rampHeight(6, 31, -1, x, z);
-  const hd = overpassDeckHeight(x, z);
-  const base = Math.max(0, ha, hb, bankHeight(x, z), bumpHeight(x, z));
-  const cands: DriveSurface[] = [{ id: 'ground', ground: base, friction: 1 }];
-  if (ha > 0.05) cands.push({ id: 'rampA', ground: ha, friction: 1 });
-  if (hb > 0.05) cands.push({ id: 'rampB', ground: hb, friction: 1 });
-  if (hd > 0.05) cands.push({ id: 'deck', ground: hd, friction: 1 });
-  if (prevId === 'deck') {
-    const deck = cands.find((c) => c.id === 'deck');
-    if (deck && Math.abs(deck.ground - currentY) < 1.6) return deck;
-    if (!deck && currentY > 2.5) return { id: 'deck', ground: 0, friction: 1 };
+  const ha = rampHeight(-6, -31, 1, x, z), hb = rampHeight(6, 31, -1, x, z);
+  const base = arenaHeight(x, z), hd = overpassDeckHeight(x, z);
+  if (hd > 0 && (prevId === 'deck' || hd <= 0.65 || currentY >= hd - 0.55)) {
+    return { id: 'deck', ground: hd, friction: 1 };
   }
-  const prev = cands.find((c) => c.id === prevId);
-  if (prev && prev.id !== 'deck' && Math.abs(prev.ground - currentY) < 1.2) {
-    if (prev.id === 'ground' && hd > 0.5 && currentY > 2.5) {
-      const deck = cands.find((c) => c.id === 'deck');
-      if (deck) return deck;
-    }
-    return prev;
-  }
-  if (currentY < 2.5) {
-    let best = cands[0];
-    for (const c of cands) {
-      if (c.id === 'deck') continue;
-      if (c.ground <= currentY + 0.5 && c.ground >= best.ground) best = c;
-    }
-    return best;
-  }
-  let best = cands[0];
-  for (const c of cands) {
-    if (c.ground <= currentY + 0.5 && c.ground >= best.ground) best = c;
-  }
-  if (best.ground > currentY + 0.5) {
-    best = cands[0];
-    for (const c of cands) if (Math.abs(c.ground - currentY) < Math.abs(best.ground - currentY)) best = c;
-  }
-  return best;
+  return { id: ha > 0 ? 'rampA' : hb > 0 ? 'rampB' : 'ground', ground: base, friction: 1 };
 }
 // 필수조건 5: 점프 끝단 통과를 1회만 감지해 이륙. 램프 위 매 프레임 재발사 금지.
 export function rampTakeoff(prevX: number, prevZ: number, x: number, z: number): SurfaceId | null {
-  if (Math.abs(x + 6) < 4 || Math.abs(prevX + 6) < 4) {
-    if (prevZ < -25 && z >= -25 && z <= -19) return 'rampA';
-  }
-  if (Math.abs(x - 6) < 4 || Math.abs(prevX - 6) < 4) {
-    if (prevZ > 25 && z <= 25 && z >= 19) return 'rampB';
+  for (const [cx, lip, direction, id] of [[-6, -25, 1, 'rampA'], [6, 25, -1, 'rampB']] as const) {
+    if ((prevZ - lip) * direction < 0 && (z - lip) * direction >= 0) {
+      const t = (lip - prevZ) / (z - prevZ);
+      const crossingX = prevX + (x - prevX) * t;
+      if (Math.abs(crossingX - cx) < 4) return id;
+    }
   }
   return null;
 }
@@ -229,4 +205,18 @@ export function findPath(ax: number, az: number, bx: number, bz: number): [numbe
   let i = end;
   while (i !== start && prev.has(i)) { result.unshift(at(i)); i = prev.get(i)!; }
   return result;
+}
+/** Shorten the camera boom before terrain or the bridge slab hides the kart. */
+export function clearCameraBoom(target: { x: number; y: number; z: number }, desired: { x: number; y: number; z: number }) {
+  let safe = 1;
+  for (let i = 1; i <= 40; i++) {
+    const t = i / 40;
+    const x = target.x + (desired.x - target.x) * t;
+    const y = target.y + (desired.y - target.y) * t;
+    const z = target.z + (desired.z - target.z) * t;
+    const deck = overpassDeckHeight(x, z);
+    const hitsDeck = deck > .1 && y >= deck - .8 && y <= deck + .45;
+    if (y < arenaHeight(x, z) + .45 || hitsDeck) { safe = Math.max(.08, t - .055); break; }
+  }
+  return { x: target.x + (desired.x - target.x) * safe, y: target.y + (desired.y - target.y) * safe, z: target.z + (desired.z - target.z) * safe };
 }

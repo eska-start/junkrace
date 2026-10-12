@@ -475,3 +475,12 @@ h1, h2, h3, p { margin: 0; }
   .jr-modal.wide:has(.jr-lobby-tabs) { width: calc(100vw - 28px); max-height: calc(100dvh - 28px); border-radius: 22px; }
   .jr-modal.wide:has(.jr-lobby-tabs) .jr-modal-body { padding: 16px 16px 20px; }
 }
+
+/* Camera controls stay above the side panels and clear of driving controls. */
+.jr-battle-hud .jr-hud-left { gap: 6px; }
+.jr-camera-selector { display: flex; pointer-events: auto; padding: 3px; gap: 3px; background: #302c24e8; border: 1px solid #e2c79280; border-radius: 12px; }
+.jr-camera-selector button { min-width: 58px; min-height: 38px; border: 0; border-radius: 8px; color: #ecdaba; background: transparent; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; touch-action: manipulation; }
+.jr-camera-selector button[aria-pressed="true"] { color: #312c22; background: #efcf8b; box-shadow: 0 2px 4px #0003; }
+.jr-camera-selector button:focus-visible { outline: 3px solid #a8eee0; outline-offset: 2px; }
+@media (pointer: coarse) { .jr-camera-selector button { min-height: 44px; } }
+@media (max-height: 520px) { .jr-battle-hud .jr-hud-left { flex-direction: row; align-items: flex-start; }.jr-camera-selector button { min-width: 48px; }.jr-battle-hud .jr-hud-stage { display:none; } }
